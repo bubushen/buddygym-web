@@ -646,15 +646,15 @@ function renderLoginScreen() {
 const checkAlias = (alias) => (cloudClient ? aliasAvailable(cloudClient, alias) : Promise.resolve(null));
 
 function renderSignupScreen() {
-  renderSignup(screens.signup, {
+  renderSignup(screens.signup, document.querySelector('#dockSlot'), {
     onBack: () => openRoute('#/benvenuto'),
     onLogin: () => openRoute('#/account'),
     onGoogle: (profile) => { rememberSignupProfile(profile); return signInWith('google', 'Google'); },
     checkAlias,
-    onCreate: async ({ alias, email, birthDate, password, sex, weight, height }) => {
+    onCreate: async ({ alias, email, birthDate, password, sex }) => {
       const problem = authUnavailable();
       if (problem) return { message: problem };
-      rememberSignupProfile({ sex, birthDate, weight, height });
+      rememberSignupProfile({ sex, birthDate });
       const { data, error } = await cloudClient.auth.signUp({
         email, password,
         options: { emailRedirectTo: authRedirectUrl(), data: { alias, birth_date: birthDate, mode: currentMode() } },

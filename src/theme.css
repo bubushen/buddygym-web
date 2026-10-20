@@ -225,6 +225,22 @@
   --type-tips: 500 14px/20px var(--font-sans);
   --type-tips-label: 700 11px/14px var(--font-sans);
   --track-tips-label: .08em;
+  /* Registrazione in 3 passi (SignupStepsScreen) */
+  --steps-side: 44px;
+  --steps-bar-gap: 6px;
+  --steps-bar-h: 6px;
+  --steps-bar-radius: 3px;
+  --type-steps-n: 600 12px/16px var(--font-sans);
+  --steps-head-top: 16px;
+  --steps-head-bottom: 28px;
+  --type-steps-lead: 500 15px/22px var(--font-sans);
+  --steps-field-gap: 24px;
+  --opt-h: 56px;
+  --opt-border: 1.5px;
+  --type-opt: 600 15px/1 var(--font-sans);
+  --type-datebtn: 500 16px/1 var(--font-sans);
+  --authdock-bottom: max(28px, env(safe-area-inset-bottom));
+  --type-authdock: 500 13px/18px var(--font-sans);
   /* Riepilogo di fine allenamento e coriandoli */
   --badge-xl: 72px;
   --badge-xl-icon: 36px;

@@ -691,3 +691,26 @@ button.bg-rank { cursor: pointer; }
 .bg-pagehead p.bg-pagehead__over { margin: 0 0 var(--space-1); font: var(--type-overline); letter-spacing: var(--track-overline); text-transform: uppercase; color: var(--accent); }
 .bg-field .bg-chips--wrap { margin-top: var(--space-1); }
 .bg-field [role="alert"]:not([hidden]) { color: var(--danger); display: flex; align-items: center; gap: var(--space-1); }
+
+/* ——— Registrazione in 3 passi (SignupStepsScreen) ——— */
+.bg-steps { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: var(--steps-side) 1fr var(--steps-side); align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); padding-top: max(var(--space-3), env(safe-area-inset-top)); background: var(--surface); }
+.bg-steps .bg-progress { margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--steps-bar-gap); justify-items: stretch; }
+.bg-steps .bg-progress i { height: var(--steps-bar-h); border-radius: var(--steps-bar-radius); background: var(--surface-sunken); border: var(--border-thin) solid var(--line); box-sizing: border-box; }
+.bg-steps .bg-progress i.on { background: var(--primary); border-color: transparent; }
+.bg-steps__n { font: var(--type-steps-n); color: var(--ink-muted); text-align: right; }
+.bg-stepshead { padding: var(--steps-head-top) var(--space-4) var(--steps-head-bottom); }
+.bg-stepshead h1 { margin: 0; font: var(--type-screen-title); letter-spacing: var(--track-screen-title); color: var(--ink); }
+.bg-stepshead p { margin: var(--space-2) 0 0; font: var(--type-steps-lead); color: var(--ink-muted); }
+.bg-form--steps { gap: var(--steps-field-gap); }
+.bg-optgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }
+.bg-opt { height: var(--opt-h); border-radius: var(--radius-md); border: var(--opt-border) solid var(--line); background: var(--surface-raised); color: var(--ink); font: var(--type-opt); cursor: pointer; padding: 0 var(--space-2); }
+.bg-opt[aria-checked="true"] { background: var(--highlight); border-color: var(--accent); color: var(--on-highlight); }
+.bg-opt:focus-visible, .bg-datebtn:focus-within { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+.bg-datebtn { position: relative; width: 100%; display: flex; align-items: center; gap: var(--space-3); height: var(--opt-h); padding: 0 var(--space-4); box-sizing: border-box; border-radius: var(--radius-md); border: var(--opt-border) solid var(--line); background: var(--surface-sunken); color: var(--ink-muted); font: var(--type-datebtn); text-align: left; cursor: pointer; }
+.bg-datebtn span { flex: 1; }
+.bg-datebtn--set { color: var(--ink); font-weight: 600; }
+/* L'input data nativo copre tutto il campo, invisibile: il tocco apre il selettore del telefono. Una sola icona. */
+.bg-datebtn input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; font: inherit; color-scheme: inherit; }
+.bg-datebtn input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; opacity: 0; cursor: pointer; }
+.bg-datefield .bg-field__help { display: flex; margin-top: var(--space-2); }
+.bg-authdock { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--authdock-bottom); background: var(--surface); text-align: center; font: var(--type-authdock); color: var(--ink-muted); }
