@@ -8,7 +8,9 @@ const WEEKDAYS = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
 const monthName = (year, month) => new Intl.DateTimeFormat('it-IT', { month: 'long' }).format(new Date(year, month, 1));
 const capitalized = (text) => text.charAt(0).toLocaleUpperCase('it') + text.slice(1);
 
-function calendar({ year, month, days, today, onDay, onMonth }) {
+function calendar({ year, month, days, today, onDay, onMonth, pilates }) {
+  const what = pilates ? 'sessione' : 'allenamento';
+  const special = pilates ? 'con traguardo' : 'con record';
   const first = new Date(year, month, 1);
   const offset = (first.getDay() + 6) % 7;
   const count = new Date(year, month + 1, 0).getDate();
@@ -18,7 +20,7 @@ function calendar({ year, month, days, today, onDay, onMonth }) {
     const state = days.get(day);
     const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
     const className = [state ?? '', isToday ? 'today' : ''].filter(Boolean).join(' ');
-    const label = `${day} ${monthName(year, month)}${state === 'pr' ? ', allenamento con record' : state ? ', allenamento' : ''}${isToday ? ', oggi' : ''}`;
+    const label = `${day} ${monthName(year, month)}${state === 'pr' ? `, ${what} ${special}` : state ? `, ${what}` : ''}${isToday ? ', oggi' : ''}`;
     cells.push(state
       ? el('button', { type: 'button', className, 'aria-label': label, onClick: () => onDay(day), text: String(day) })
       : el('i', { className, 'aria-label': label, text: String(day) }));
@@ -31,8 +33,25 @@ function calendar({ year, month, days, today, onDay, onMonth }) {
         el('button', { type: 'button', 'aria-label': 'Mese successivo', onClick: () => onMonth(1) }, '›'))),
     el('div', { className: 'bg-cal' }, cells),
     el('div', { className: 'bg-legend' },
-      el('span', {}, el('i', { className: 'bg-legend__on' }), 'allenamento'),
-      el('span', {}, el('i', { className: 'bg-legend__pr' }), 'con record')));
+      el('span', {}, el('i', { className: 'bg-legend__on' }), what),
+      el('span', {}, el('i', { className: 'bg-legend__pr' }), special)));
+}
+
+// Pilates: stella se c'è un traguardo, esercizi · attrezzi, minuti al posto dei kg.
+function pilatesRow(session, onOpen) {
+  const date = new Date(session.endedAt);
+  const summary = session.summary ?? {};
+  const exercises = summary.exercisesDone ?? 0;
+  const equipment = (summary.equipment ?? []).join(', ');
+  return el('button', { type: 'button', className: 'bg-hrow', dataset: { day: String(date.getDate()) }, onClick: () => onOpen(session) },
+    el('span', { className: 'bg-hrow__date' },
+      el('b', { text: String(date.getDate()) }),
+      el('span', { text: new Intl.DateTimeFormat('it-IT', { weekday: 'short' }).format(date) })),
+    el('span', {},
+      el('span', { className: 'bg-hrow__name' }, session.title,
+        summary.milestones?.length ? el('span', { className: 'bg-trophy', 'aria-label': 'Traguardo' }, icon('star')) : null),
+      el('span', { className: 'bg-hrow__meta', text: `${exercises} ${exercises === 1 ? 'esercizio' : 'esercizi'}${equipment ? ` · ${equipment}` : ''}` })),
+    el('span', { className: 'bg-hrow__vol' }, String(Math.round((session.endedAt - session.startedAt) / 60_000)), el('small', { text: 'minuti' })));
 }
 
 function historyRow(session, onOpen) {
@@ -53,15 +72,19 @@ function historyRow(session, onOpen) {
       el('small', { text: formatDuration(session.endedAt - session.startedAt) })));
 }
 
-export function renderHistory(root, { view, year, month, titles, filter, initial, onAccount, onFilter, onMonth, onOpen, onEmpty }) {
+export function renderHistory(root, { view, year, month, titles, filter, initial, pilates = false, onAccount, onFilter, onMonth, onOpen, onEmpty }) {
   const records = view.records;
-  const subtitle = `${view.count} ${view.count === 1 ? 'allenamento' : 'allenamenti'} a ${monthName(year, month)}${records ? ` · ${records} ${records === 1 ? 'record' : 'record'}` : ''}`;
+  const count = (value) => (pilates ? `${value} ${value === 1 ? 'sessione' : 'sessioni'}` : `${value} ${value === 1 ? 'allenamento' : 'allenamenti'}`);
+  const subtitle = pilates
+    ? `${count(view.count)} a ${monthName(year, month)} · ${view.minutes} minuti`
+    : `${count(view.count)} a ${monthName(year, month)}${records ? ` · ${records} ${records === 1 ? 'record' : 'record'}` : ''}`;
+  const row = pilates ? pilatesRow : historyRow;
   const list = el('div', {});
   const scrollTo = (day) => list.querySelector(`.bg-hrow[data-day="${day}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   for (const group of view.groups) {
     list.append(
-      el('div', { className: 'bg-hgroup' }, group.label, el('span', { text: `${group.sessions.length} ${group.sessions.length === 1 ? 'allenamento' : 'allenamenti'}` })),
-      el('div', { className: 'bg-exlist' }, group.sessions.map((session) => historyRow(session, onOpen))));
+      el('div', { className: 'bg-hgroup' }, group.label, el('span', { text: count(group.sessions.length) })),
+      el('div', { className: 'bg-exlist' }, group.sessions.map((session) => row(session, onOpen))));
   }
   const nothingYet = !titles.length;
   root.replaceChildren(
@@ -69,14 +92,14 @@ export function renderHistory(root, { view, year, month, titles, filter, initial
     el('main', {},
       pageHead({ title: 'Storico', subtitle: nothingYet ? null : subtitle }),
       nothingYet
-        ? el('div', { className: 'bg-form' }, emptyState('Il tuo primo allenamento apparirà qui.'), button({ label: 'Vai alle schede', onClick: onEmpty }))
+        ? el('div', { className: 'bg-form' }, emptyState(pilates ? 'La tua prima sessione apparirà qui.' : 'Il tuo primo allenamento apparirà qui.'), button({ label: pilates ? 'Vai alle sequenze' : 'Vai alle schede', onClick: onEmpty }))
         : [
-          el('div', { className: 'bg-chips', role: 'group', 'aria-label': 'Filtra per scheda' },
+          el('div', { className: 'bg-chips', role: 'group', 'aria-label': pilates ? 'Filtra per sequenza' : 'Filtra per scheda' },
             [null, ...titles].map((title) => el('button', {
               type: 'button', className: 'bg-fchip', 'aria-pressed': String(filter === title), onClick: () => onFilter(title),
             }, title ?? 'Tutte'))),
-          calendar({ year, month, days: view.days, today: new Date(), onDay: scrollTo, onMonth }),
-          view.count ? list : el('p', { className: 'bg-empty bg-empty--spaced', text: 'Nessun allenamento in questo mese.' }),
+          calendar({ year, month, days: view.days, today: new Date(), onDay: scrollTo, onMonth, pilates }),
+          view.count ? list : el('p', { className: 'bg-empty bg-empty--spaced', text: pilates ? 'Nessuna sessione in questo mese.' : 'Nessun allenamento in questo mese.' }),
           el('div', { className: 'bg-exspacer bg-exspacer--form', 'aria-hidden': 'true' }),
         ]));
 }

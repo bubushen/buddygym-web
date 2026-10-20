@@ -1,6 +1,7 @@
 // Componenti del design system BuddyGym, costruiti come elementi DOM.
 // Gli stili sono in src/ui/components.css e usano solo i token di src/theme.css.
 import { icon } from './icons.js';
+import { isPilates } from '../mode.js';
 
 export function el(tag, attributes = {}, ...children) {
   const node = document.createElement(tag);
@@ -16,7 +17,6 @@ export function el(tag, attributes = {}, ...children) {
   return node;
 }
 
-// AppBar: account a sinistra, logotipo al centro, azione primaria (+) a destra.
 // AppBar: account a sinistra, logotipo (o titolo della sezione) al centro, a destra
 // l'azione primaria (+) oppure un'altra azione della sezione.
 export function appBar({ initial, onAccount, onAdd, addLabel = 'Aggiungi scheda', showAdd = true, title = null, action = null }) {
@@ -24,7 +24,7 @@ export function appBar({ initial, onAccount, onAdd, addLabel = 'Aggiungi scheda'
     initial ? initial : icon('person'));
   const brand = title
     ? el('span', { className: 'bg-appbar__brand', text: title })
-    : el('span', { className: 'bg-appbar__brand' }, 'Buddy', el('span', { text: 'Gym' }));
+    : el('span', { className: 'bg-appbar__brand' }, 'Buddy', el('span', { text: isPilates() ? 'Pilates' : 'Gym' }));
   const add = action ?? (showAdd
     ? el('button', { type: 'button', className: 'bg-iconbtn bg-iconbtn--primary', 'aria-label': addLabel, onClick: onAdd }, icon('plus'))
     : el('span', { className: 'bg-appbar__spacer' }));
@@ -53,9 +53,11 @@ const TABS = [
 
 // TabBar: cinque sezioni sempre visibili, con le etichette. Voce attiva con pill e
 // aria-current; il Social può avere un pallino per nuovi commenti o «Forza».
+// In Pilates la prima voce è Sequenze, con l'icona Pilates; le altre restano uguali.
 export function tabBar({ current, onSelect, dots = {} }) {
+  const tabs = isPilates() ? [{ id: 'schede', label: 'Sequenze', icon: 'pilates' }, ...TABS.slice(1)] : TABS;
   return el('nav', { className: 'bg-tabbar', 'aria-label': 'Navigazione principale' },
-    TABS.map((tab) => el('button', {
+    tabs.map((tab) => el('button', {
       type: 'button',
       className: 'bg-tab',
       'aria-current': tab.id === current ? 'page' : null,

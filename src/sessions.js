@@ -19,8 +19,11 @@ export function saveSessions(storage, sessions) {
 }
 
 export function sessionFromSummary(workout, sessionId, startedAt, endedAt, summary) {
-  return { id: sessionId, workoutId: workout.id, title: workout.title, startedAt, endedAt, summary, effort: null };
+  return { id: sessionId, workoutId: workout.id, title: workout.title, startedAt, endedAt, summary, effort: null, mode: workout.mode === 'pilates' ? 'pilates' : 'gym' };
 }
+
+// Palestra e Pilates restano separati: ogni schermata vede solo la sua modalità.
+export const sessionMode = (session) => (session.mode === 'pilates' ? 'pilates' : 'gym');
 
 export function upsertSession(storage, session) {
   const sessions = loadSessions(storage).filter((item) => item.id !== session.id);
@@ -33,7 +36,7 @@ export function backfillSessions(storage, workouts) {
   const sessions = loadSessions(storage);
   const known = new Set(sessions.map((item) => item.id));
   let added = 0;
-  for (const workout of workouts) {
+  for (const workout of workouts.filter((item) => item.mode !== 'pilates')) {
     for (const session of workoutSessions(storage, workout)) {
       if (known.has(session.sessionId) || !Number.isFinite(session.startedAt)) continue;
       const summary = workoutSummary(storage, workout, session.sessionId);
@@ -65,7 +68,8 @@ export function historyView(sessions, { year, month, workoutTitle = null, now = 
   const days = new Map();
   for (const item of inMonth) {
     const day = new Date(item.endedAt).getDate();
-    const record = (item.summary?.records?.length ?? 0) > 0;
+    // Giorno in evidenza: record di carico (Palestra) o traguardo (Pilates).
+    const record = (item.summary?.records?.length ?? 0) > 0 || (item.summary?.milestones?.length ?? 0) > 0;
     days.set(day, days.get(day) === 'pr' || record ? 'pr' : 'on');
   }
   const thisWeek = weekStart(now);
@@ -85,6 +89,7 @@ export function historyView(sessions, { year, month, workoutTitle = null, now = 
   return {
     count: inMonth.length,
     records: inMonth.reduce((sum, item) => sum + (item.summary?.records?.length ?? 0), 0),
+    minutes: Math.round(inMonth.reduce((sum, item) => sum + Math.max(0, item.endedAt - item.startedAt), 0) / 60_000),
     days,
     groups,
   };

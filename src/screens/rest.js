@@ -22,19 +22,20 @@ function ring() {
   return { svg, progress };
 }
 
-export function renderRest(panel, { remaining, total, next, detail, onMinus, onPlus, onSkip }) {
+// In Pilates è la pausa tra gli esercizi: «Pausa», −5 s / +5 s e «Inizia ora».
+export function renderRest(panel, { remaining, total, next, detail, onMinus, onPlus, onSkip, over = 'Recupero', step = 15, skipLabel = 'Salta' }) {
   const { svg, progress } = ring();
   const time = el('span', { className: 'bg-rest__time', text: formatRest(remaining) });
   const label = el('p', { className: 'bg-rest__next', text: next });
   const sub = el('p', { className: 'bg-rest__sub', text: detail });
   const buttons = el('div', { className: 'bg-rest__btns' },
-    el('button', { type: 'button', className: 'bg-btn bg-btn--outline', 'aria-label': 'Togli 15 secondi', onClick: onMinus, text: '−15 s' }),
-    el('button', { type: 'button', className: 'bg-btn bg-btn--outline', 'aria-label': 'Aggiungi 15 secondi', onClick: onPlus, text: '+15 s' }),
-    el('button', { type: 'button', className: 'bg-btn bg-btn--primary', onClick: onSkip, text: 'Salta' }));
+    el('button', { type: 'button', className: 'bg-btn bg-btn--outline', 'aria-label': `Togli ${step} secondi`, onClick: onMinus, text: `−${step} s` }),
+    el('button', { type: 'button', className: 'bg-btn bg-btn--outline', 'aria-label': `Aggiungi ${step} secondi`, onClick: onPlus, text: `+${step} s` }),
+    el('button', { type: 'button', className: 'bg-btn bg-btn--primary', onClick: onSkip, text: skipLabel }));
   panel.replaceChildren(
     el('div', { className: 'bg-rest__top' },
       el('div', { className: 'bg-rest__ring' }, svg, time),
-      el('div', {}, el('p', { className: 'bg-rest__over', text: 'Recupero' }), label, sub)),
+      el('div', {}, el('p', { className: 'bg-rest__over', text: over }), label, sub)),
     buttons);
   panel.hidden = false;
   const view = {

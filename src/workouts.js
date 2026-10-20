@@ -1,3 +1,5 @@
+import { validPilatesExercise } from './pilates.js';
+
 export const WORKOUT_STORAGE_KEY = 'buddygym:workouts:v2';
 
 const EXAMPLES = [
@@ -24,6 +26,7 @@ export function exampleWorkouts() {
 
 function validExercise(exercise) {
   if (!exercise || typeof exercise.id !== 'string' || typeof exercise.title !== 'string' || !exercise.title.trim()) return false;
+  if (exercise.mode === 'pilates') return validPilatesExercise(exercise);
   if (exercise.restSeconds !== undefined && !(Number.isInteger(exercise.restSeconds) && exercise.restSeconds >= 0)) return false;
   // Gli esercizi a tempo possono avere più serie (per esempio 3 × 45 s di plank).
   if (exercise.mode === 'time') return Number.isFinite(exercise.minutes) && exercise.minutes > 0
@@ -32,8 +35,11 @@ function validExercise(exercise) {
 }
 
 export function validWorkout(workout) {
+  // Le sequenze Pilates (mode 'pilates') contengono solo esercizi Pilates; le schede nessuno.
+  const pilates = workout?.mode === 'pilates';
   return workout && typeof workout.id === 'string' && typeof workout.title === 'string' && workout.title.trim()
-    && Array.isArray(workout.exercises) && workout.exercises.every(validExercise);
+    && (workout.mode === undefined || workout.mode === 'gym' || pilates)
+    && Array.isArray(workout.exercises) && workout.exercises.every((exercise) => validExercise(exercise) && (exercise.mode === 'pilates') === pilates);
 }
 
 export function loadWorkouts(storage) {
@@ -65,6 +71,7 @@ export function migrateLegacyCurlLogs(storage) {
 }
 
 export function exerciseSummary(exercise) {
+  if (exercise.mode === 'pilates') return `${Math.round(exercise.seconds / 60)} minuti`;
   return exercise.mode === 'time'
     ? `${exercise.minutes} minuti`
     : `${exercise.sets} serie × ${exercise.reps} ripetizioni`;

@@ -7,7 +7,7 @@ function ok(result) {
   return result.data;
 }
 
-const POST_FIELDS = 'id,user_id,session_id,workout_title,title,body,visibility,show_loads,stats,created_at,buddy_post_strength(user_id),buddy_comments(id,user_id,body,created_at,edited_at)';
+const POST_FIELDS = 'id,user_id,session_id,workout_title,title,body,visibility,show_loads,stats,mode,created_at,buddy_post_strength(user_id),buddy_comments(id,user_id,body,created_at,edited_at)';
 
 // Alias degli utenti citati (autori, commentatori, amici), con una sola chiamata.
 export async function loadNames(client, ids) {
@@ -23,7 +23,7 @@ function shapePost(row, me) {
   return {
     id: row.id, userId: row.user_id, sessionId: row.session_id, workoutTitle: row.workout_title,
     title: row.title, body: row.body ?? '', visibility: row.visibility, showLoads: row.show_loads,
-    stats: row.stats ?? {}, createdAt: row.created_at,
+    stats: row.stats ?? {}, createdAt: row.created_at, mode: row.mode === 'pilates' ? 'pilates' : 'gym',
     strength: strength.length, mine: row.user_id === me, strengthByMe: strength.some((item) => item.user_id === me),
     comments,
   };
@@ -133,8 +133,18 @@ export async function publishedSessionIds(client, me) {
 }
 
 // Pubblica una seduta. Con «mostra i carichi» spento volume e record non lasciano il telefono.
-export async function publishSession(client, me, session, { title, body, visibility, showLoads }) {
+// Pilates: durata, esercizi, attrezzo e traguardi; con «Mostra durata ed esercizi» spento resta l'attrezzo.
+export function postStats(session, showLoads) {
   const summary = session.summary ?? {};
+  if (session.mode === 'pilates') {
+    const stats = { equipment: (summary.equipment ?? []).join(', ') };
+    if (showLoads) {
+      stats.duration = session.endedAt - session.startedAt;
+      stats.exercises = summary.exercisesDone ?? 0;
+      stats.milestones = (summary.milestones ?? []).map((item) => ({ title: item.title }));
+    }
+    return stats;
+  }
   const stats = {
     duration: session.endedAt - session.startedAt,
     sets: summary.sets ?? 0,
@@ -144,14 +154,20 @@ export async function publishSession(client, me, session, { title, body, visibil
     stats.volume = summary.volume ?? 0;
     stats.records = (summary.records ?? []).map((item) => ({ title: item.title, load: item.load, reps: item.reps }));
   }
+  return stats;
+}
+
+export async function publishSession(client, me, session, { title, body, visibility, showLoads }) {
   ok(await client.from('buddy_posts').insert({
     user_id: me, session_id: session.id, workout_title: session.title,
-    title: title.trim(), body: body.trim() || null, visibility, show_loads: showLoads, stats,
+    title: title.trim(), body: body.trim() || null, visibility, show_loads: showLoads, stats: postStats(session, showLoads),
+    mode: session.mode === 'pilates' ? 'pilates' : 'gym',
   }));
 }
 
 // Titolo proposto: «Lower con record», altrimenti il nome della scheda.
 export function suggestedTitle(session) {
+  if (session.mode === 'pilates') return (session.summary?.milestones?.length ?? 0) > 0 ? `${session.title} con traguardo` : session.title;
   return (session.summary?.records?.length ?? 0) > 0 ? `${session.title} con record` : session.title;
 }
 

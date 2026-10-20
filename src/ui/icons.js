@@ -35,12 +35,16 @@ const PATHS = {
   share: '<path d="M12 15V4M7 9l5-5 5 5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>',
   more: '<path d="M5 12h.01M12 12h.01M19 12h.01"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  // Pilates: figura sul tappetino (Sequenze) e stella dei traguardi.
+  pilates: '<circle cx="12" cy="5" r="2"/><path d="M4 20c2.5-4.5 5-6.5 8-6.5s5.5 2 8 6.5M7 11.5l5 2.5 5-2.5M3 20h18"/>',
+  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
 };
 
 // Icone piene (play e stop): riempite con currentColor, senza tratto.
 const FILLED = {
   play: '<path d="M7 4.5v15l13-7.5z"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
 };
 
 export function icon(name, { small = false, className = '' } = {}) {

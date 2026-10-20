@@ -26,7 +26,9 @@ export function readExerciseHistory(storage, workoutId, exerciseId) {
 
 function recordedRows(exercise, rows) {
   return rows.flatMap((row, index) => {
-    const filled = exercise.mode === 'time'
+    const filled = exercise.mode === 'pilates'
+      ? Number(row?.seconds) > 0
+      : exercise.mode === 'time'
       ? row?.minutes !== '' && row?.minutes != null
       : row && (row.reps !== '' && row.reps != null || row.load !== '' && row.load != null);
     return filled ? [{ ...row, set: index + 1 }] : [];
@@ -75,6 +77,7 @@ export function migratePreviousLog(storage, workoutId, exercise, hasActiveSessio
 }
 
 export function sessionMetric(exercise, entry) {
+  if (exercise.mode === 'pilates') return Number(entry.rows[0]?.seconds) > 0 ? Number(entry.rows[0].seconds) : null;
   const field = exercise.mode === 'time' ? 'minutes' : 'load';
   const values = entry.rows.filter((row) => row?.[field] !== '' && row?.[field] != null
     && (exercise.mode === 'time' || Number(row.reps) > 0))

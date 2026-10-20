@@ -13,21 +13,26 @@ import { endWorkoutCheck, plannedSets, restSecondsOf, rowDone, shortDate } from 
 import { accountStorage, createCloudClient, deleteAccount, downloadAccount, signInWithProvider, uploadAccount } from './cloud-account.js';
 import { authCallbackParameters, authRedirectUrl, isAuthCallback, isNativeApp, nativePlugin } from './native-app.js';
 import { createLocalBackup, importLocalBackup } from './local-backup.js';
-import { aliasAvailable, loadProfile, saveAlias, saveBirthDate, savePrivacy } from './profile.js';
+import { aliasAvailable, loadProfile, saveAlias, saveBirthDate, saveMode as saveProfileMode, savePrivacy } from './profile.js';
+import { MODE_KEY, applyMode, currentMode, isPilates, readMode, saveMode } from './mode.js';
+import { modePicker, renderWelcome } from './screens/mode.js';
+import { renderPilatesBlock, renderPilatesExerciseForm, renderPilatesSummary } from './screens/pilates.js';
 import { addMeasurement, loadMeasurements } from './measurements.js';
 import { renderProfile } from './screens/profile.js';
 import { renderWorkoutScreen } from './screens/workout.js';
 import { renderNewWorkout } from './screens/new-workout.js';
-import { renderSummary } from './screens/summary.js';
+import { confetti, renderSummary } from './screens/summary.js';
 import { renderRest } from './screens/rest.js';
 import { renderHistory as renderHistoryView } from './screens/history.js';
 import { setSocialUser, openActions, openPublishSheet, renderFindFriends, renderFriendProfile, renderLeaderboard, renderPostDetail, renderSocialFeed } from './screens/social.js';
 import * as social from './social.js';
 import { openEndWorkoutSheet } from './screens/end-workout.js';
 import { withScreenOn } from './screen-awake.js';
+import * as pilates from './pilates.js';
+import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
-import { SESSIONS_KEY, backfillSessions, historyTitles, historyView, loadSessions, sessionFromSummary, upsertSession } from './sessions.js';
+import { SESSIONS_KEY, backfillSessions, historyTitles, historyView, loadSessions, sessionFromSummary, sessionMode, upsertSession } from './sessions.js';
 import { createCoachUI } from './coach-ui.js';
 import { canCompressVideo, compressVideo } from './video-compress.js';
 import { keepFrameFitted } from './video-frame.js';
@@ -82,6 +87,74 @@ const dirtyKey = (userId) => `buddygym:account-pending:${userId}`;
 migrateLegacyCurlLogs(storage);
 let workouts = loadWorkouts(storage);
 let activeWorkout = loadActiveWorkout(storage, workouts);
+
+// Modalità: al primo avvio la sceglie WelcomeSplitScreen; chi usava già l'app resta in Palestra.
+// La scelta fatta prima della registrazione resta «in attesa» e va nel profilo al primo accesso.
+const MODE_PENDING_KEY = 'buddygym:mode-pending';
+let needsWelcome = false;
+(() => {
+  const saved = readMode(deviceStorage);
+  if (saved) { applyMode(saved); return; }
+  let used = false;
+  try {
+    for (let index = 0; index < (deviceStorage?.length ?? 0); index += 1) {
+      const key = deviceStorage.key(index);
+      if (key?.startsWith('buddygym:') || key?.startsWith('sb-')) { used = true; break; }
+    }
+  } catch { /* Senza archivio si parte dalla scelta. */ }
+  if (used) {
+    try { deviceStorage.setItem(MODE_KEY, 'gym'); } catch { /* Vale per questa apertura. */ }
+    applyMode('gym');
+  } else {
+    needsWelcome = true;
+    applyMode('gym');
+  }
+})();
+// Schede o sequenze della modalità attiva: Palestra e Pilates non si mescolano.
+const inMode = (workout) => (workout?.mode === 'pilates') === isPilates();
+const modeWorkouts = () => workouts.filter(inMode);
+const modeSessions = () => (storage ? loadSessions(storage) : []).filter((session) => sessionMode(session) === currentMode());
+
+function chooseMode(mode, { pending = false } = {}) {
+  saveMode(deviceStorage, mode);
+  try {
+    if (pending) deviceStorage.setItem(MODE_PENDING_KEY, mode);
+    else deviceStorage.removeItem(MODE_PENDING_KEY);
+  } catch { /* Vale per questa apertura. */ }
+  historyState.filter = null;
+}
+
+async function changeMode(mode) {
+  if (activeWorkout || mode === currentMode()) return;
+  chooseMode(mode);
+  if (cloudUser && cloudClient) {
+    currentProfile = { ...(currentProfile ?? {}), mode };
+    saveProfileMode(cloudClient, cloudUser.id, mode).catch((error) => {
+      console.error('BUDDYGYM mode save failed', error);
+      toast('Modalità non salvata sull\'account. Riprova quando hai internet.');
+    });
+    socialState.loaded = false;
+  }
+  renderRoute();
+}
+
+// All'accesso: la scelta fatta prima di registrarsi va nel profilo; altrimenti vale quella del profilo.
+function syncModeWithProfile(profile) {
+  let pending = null;
+  try { pending = deviceStorage.getItem(MODE_PENDING_KEY); } catch { /* Nessuna scelta in attesa. */ }
+  if (pending === 'gym' || pending === 'pilates') {
+    try { deviceStorage.removeItem(MODE_PENDING_KEY); } catch { /* Già salvata. */ }
+    if (profile?.mode !== pending) {
+      if (profile) profile.mode = pending;
+      saveProfileMode(cloudClient, cloudUser.id, pending).catch((error) => console.error('BUDDYGYM mode save failed', error));
+    }
+    return false;
+  }
+  const mode = profile?.mode;
+  if ((mode !== 'gym' && mode !== 'pilates') || mode === currentMode() || activeWorkout) return false;
+  chooseMode(mode);
+  return true;
+}
 let activeExerciseKey;
 let currentExercise;
 let currentReference;
@@ -89,6 +162,7 @@ let currentReference;
 let currentReferenceSource = null;
 let referenceUrl;
 const screens = {
+  welcome: document.querySelector('#welcomeScreen'),
   access: document.querySelector('#accessScreen'),
   coach: document.querySelector('#coachScreen'),
   bench: document.querySelector('#benchScreen'),
@@ -111,6 +185,7 @@ const screens = {
   workoutForm: document.querySelector('#workoutFormScreen'),
   exerciseForm: document.querySelector('#exerciseFormScreen'),
   exercise: document.querySelector('#exerciseScreen'),
+  pilatesForm: document.querySelector('#pilatesFormScreen'),
 };
 const coachUI = createCoachUI(screens.coach, { onPreview: showDemoClient, prepareReference: prepareCoachReference });
 
@@ -247,6 +322,7 @@ function renderProfileScreen() {
     status: lastAccountMessage,
     canRunBench: benchAvailableHere,
     version: appVersion,
+    modeSection: modePicker({ mode: currentMode(), locked: !!activeWorkout, onChange: (mode) => { void changeMode(mode); } }),
     privacy: currentProfile ? { shareStats: currentProfile.share_stats !== false, shareLoads: currentProfile.share_loads !== false } : null,
     onPrivacy: async (key, value) => {
       if (!cloudUser) return false;
@@ -302,6 +378,7 @@ async function loadAccountProfile(userId) {
     if (cloudUser?.id !== userId || profileOwnerId !== userId) return;
     currentProfile = profile;
     currentMeasurements = measurements;
+    if (syncModeWithProfile(profile)) renderRoute();
     if (!profile?.alias && !aliasPromptDismissed && !screens.home.hidden) openRoute('#/alias');
     else if (!screens.home.hidden) renderHome();
     renderAccount();
@@ -553,7 +630,7 @@ function renderSignupScreen() {
       if (problem) return { message: problem };
       const { data, error } = await cloudClient.auth.signUp({
         email, password,
-        options: { emailRedirectTo: authRedirectUrl(), data: { alias, birth_date: birthDate } },
+        options: { emailRedirectTo: authRedirectUrl(), data: { alias, birth_date: birthDate, mode: currentMode() } },
       });
       if (error) {
         if (/already|registered|exists/i.test(error.message)) return { field: 'email', message: 'Esiste già un account con questa email.' };
@@ -743,7 +820,7 @@ function syncNativeTimer(workout, exercise) {
   const key = `${activeWorkout.startedAt}:${workout.title}:${shown?.id ?? ''}`;
   if (key === nativeTimerKey) return;
   nativeTimerKey = key;
-  plugin.start({ startedAt: activeWorkout.startedAt, title: workout.title, text: shown ? shown.title : 'Allenamento in corso' })
+  plugin.start({ startedAt: activeWorkout.startedAt, title: workout.title, text: shown ? shown.title : workout.mode === 'pilates' ? 'Sessione in corso' : 'Allenamento in corso' })
     .catch((error) => console.warn('BUDDYGYM workout notification unavailable', error));
 }
 
@@ -782,10 +859,12 @@ function endWorkout() {
   if (!activeWorkout || document.querySelector('#sheetSlot .bg-sheet')) return;
   const workout = workouts.find((item) => item.id === activeWorkout.workoutId);
   if (!workout) { void finishWorkout(); return; }
+  const logs = workout.exercises.map((exercise) => readSetLog(storage, workout.id, exercise.id));
   openEndWorkoutSheet({
     workoutTitle: workout.title,
     duration: formatDuration(Date.now() - activeWorkout.startedAt),
-    check: endWorkoutCheck(workout, workout.exercises.map((exercise) => readSetLog(storage, workout.id, exercise.id))),
+    pilates: workout.mode === 'pilates',
+    check: workout.mode === 'pilates' ? pilates.endSessionCheck(workout, logs) : endWorkoutCheck(workout, logs),
     onEnd: () => { void finishWorkout(); },
   });
 }
@@ -802,11 +881,14 @@ async function finishWorkout() {
   // La seduta entra nello Storico con il suo riepilogo, anche senza serie registrate.
   if (workout && storage) {
     const sessionId = `workout-${session.startedAt}`;
-    const summary = { ...workoutSummary(storage, workout, sessionId), duration: endedAt - session.startedAt };
+    const summary = workout.mode === 'pilates'
+      ? pilatesSessionSummary(workout, sessionId, session.startedAt, endedAt)
+      : { ...workoutSummary(storage, workout, sessionId), duration: endedAt - session.startedAt };
     upsertSession(storage, sessionFromSummary(workout, sessionId, session.startedAt, endedAt, summary));
   }
   activeWorkout = null;
   clearRest();
+  clearPilates();
   try { storage.removeItem(ACTIVE_WORKOUT_KEY); } catch { /* Timer comunque fermato in questa pagina. */ }
   if (!storage) window.alert('Il browser non consente il salvataggio locale: questa seduta non è stata aggiunta allo storico.');
   updateWorkoutTimer();
@@ -848,6 +930,20 @@ function renderSummaryScreen(workout, startedAt, endedAt) {
   const sessionId = `workout-${startedAt}`;
   const celebrate = celebrateSession === sessionId;
   celebrateSession = null;
+  if (workout.mode === 'pilates') {
+    const saved = storage ? loadSessions(storage).find((item) => item.id === sessionId) : null;
+    renderPilatesSummary(screens.summary, document.querySelector('#dockSlot'), {
+      workout,
+      summary: saved?.summary ?? pilatesSessionSummary(workout, sessionId, startedAt, endedAt),
+      name: currentProfile?.alias || currentProfile?.first_name || '',
+      celebrate, confetti,
+      published: publishedSessions.has(sessionId),
+      onDone: () => openRoute('#/schede'),
+      onPublish: () => openPublish(workout, sessionId),
+    });
+    if (celebrate) celebrationHaptic();
+    return;
+  }
   renderSummary(screens.summary, document.querySelector('#dockSlot'), {
     workout,
     summary: { ...workoutSummary(storage, workout, sessionId), ...(endedAt > startedAt ? { duration: endedAt - startedAt } : {}) },
@@ -862,6 +958,19 @@ function renderSummaryScreen(workout, startedAt, endedAt) {
 
 // Riepilogo di una seduta dallo Storico: com'era quel giorno, senza coriandoli, con la data.
 function renderSessionSummary(session) {
+  if (sessionMode(session) === 'pilates') {
+    renderPilatesSummary(screens.summary, document.querySelector('#dockSlot'), {
+      workout: { id: session.workoutId, title: session.title },
+      summary: { ...session.summary, duration: session.endedAt - session.startedAt, endedAt: session.endedAt },
+      name: currentProfile?.alias || currentProfile?.first_name || '',
+      celebrate: false, confetti,
+      date: new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(session.endedAt),
+      published: publishedSessions.has(session.id),
+      onDone: () => openRoute('#/storico'),
+      onPublish: () => openPublish({ id: session.workoutId, title: session.title }, session.id),
+    });
+    return;
+  }
   renderSummary(screens.summary, document.querySelector('#dockSlot'), {
     workout: { id: session.workoutId, title: session.title },
     summary: { ...session.summary, duration: session.endedAt - session.startedAt },
@@ -971,6 +1080,7 @@ function hideRestPanel() {
   if (restPanel.hidden) return;
   restPanel.hidden = true;
   restView = null;
+  pauseView = null;
   if (!screens.exercise.hidden) document.querySelector('#exerciseNav').hidden = false;
 }
 
@@ -1039,6 +1149,185 @@ function unlockRestAudio() {
 setInterval(tickRest, 250);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tickRest(); });
 
+// ── Pilates: timer dell'esercizio e pausa tra gli esercizi (PilatesExerciseScreen) ──
+// Tutto si calcola dagli orari salvati: a schermo spento conta e vibra il servizio Android,
+// al ritorno l'app ricostruisce dov'è arrivata la sequenza.
+let pilatesClock = storage ? pilates.loadClock(storage) : null;
+let pilatesView = null;
+let pilatesViewKey = '';
+let pauseView = null;
+
+function savePilatesClock() {
+  try {
+    if (pilatesClock) storage.setItem(pilates.PILATES_CLOCK_KEY, JSON.stringify(pilatesClock));
+    else storage.removeItem(pilates.PILATES_CLOCK_KEY);
+  } catch { /* Il timer continua finché la pagina resta aperta. */ }
+  syncNativePlan();
+}
+
+function clearPilates() {
+  if (!pilatesClock) return;
+  pilatesClock = null;
+  savePilatesClock();
+  hidePausePanel();
+}
+
+const clockWorkout = () => (pilatesClock ? workouts.find((item) => item.id === pilatesClock.workoutId) : null);
+
+// Esercizi fatti nella sessione in corso: una riga { seconds, level } nel registro dell'esercizio.
+function pilatesDone(workout) {
+  const done = new Set();
+  workout.exercises.forEach((exercise, index) => { if (readSetLog(storage, workout.id, exercise.id)[0]?.seconds > 0) done.add(index); });
+  return done;
+}
+
+function markPilatesDone(workout, items) {
+  for (const { index, seconds } of items) {
+    const exercise = workout.exercises[index];
+    try { storage.setItem(exerciseLogKey(workout.id, exercise.id), JSON.stringify([{ seconds, level: exercise.level, done: true }])); } catch { /* Resta nel timer. */ }
+  }
+}
+
+// Riepilogo della sessione Pilates appena finita (salvato nello Storico con la seduta).
+function pilatesSessionSummary(workout, sessionId, startedAt, endedAt) {
+  const histories = workout.exercises.map((exercise) => readExerciseHistory(storage, workout.id, exercise.id).sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0)));
+  const done = histories.map((history) => history.find((entry) => entry.sessionId === sessionId)?.rows[0] ?? null);
+  const before = histories.map((history) => history.filter((entry) => entry.sessionId !== sessionId));
+  const sessions = loadSessions(storage).filter((item) => sessionMode(item) === 'pilates' && item.id !== sessionId && item.endedAt <= endedAt);
+  return pilates.pilatesSummary({ workout, done, history: before, sessions, startedAt, endedAt });
+}
+
+// Sul web vibra il telefono; nell'app Android vibra e suona il servizio (anche a schermo spento).
+function pilatesSignal() {
+  if (nativeTimer()?.startPlan) return;
+  restSignal();
+}
+
+function syncNativePlan() {
+  const plugin = nativeTimer();
+  // A sessione finita il servizio si ferma da solo (stop) e cancella anche le fasi.
+  if (!plugin?.startPlan || !activeWorkout) return;
+  const workout = clockWorkout();
+  const phases = pilatesClock?.running && workout ? pilates.upcomingPhases(pilatesClock, workout) : [];
+  (phases.length ? plugin.startPlan({ phases: JSON.stringify(phases) }) : plugin.cancelPlan())
+    .catch((error) => console.warn('BUDDYGYM native plan unavailable', error));
+}
+
+function pilatesRouteIndex(workout) {
+  const parts = window.location.hash.split('/');
+  if (parts[1] !== 'esercizio' || parts[2] !== workout.id || screens.exercise.hidden) return -1;
+  return workout.exercises.findIndex((item) => item.id === parts[3]);
+}
+
+// Applica il risultato del timer: esercizi fatti, pausa, esercizio successivo o fine.
+function applyPilates(result, workout, { signal = true } = {}) {
+  const before = pilatesClock;
+  markPilatesDone(workout, result.done);
+  pilatesClock = result.clock;
+  savePilatesClock();
+  if (signal && (result.done.length || before?.phase !== pilatesClock?.phase)) pilatesSignal();
+  const here = pilatesRouteIndex(workout);
+  // Fine pausa: si passa da soli all'esercizio che parte.
+  if (pilatesClock?.phase === 'exercise' && before?.phase === 'pause' && here >= 0 && here !== pilatesClock.index) {
+    openRoute(`#/esercizio/${workout.id}/${workout.exercises[pilatesClock.index].id}`);
+  } else if (!screens.workout.hidden) renderWorkout(workout);
+  if (result.finished) setTimeout(() => { void endWorkout(); }, 400);
+  drawPilates();
+}
+
+function tickPilates() {
+  if (!pilatesClock) return;
+  const workout = clockWorkout();
+  if (!workout || activeWorkout?.workoutId !== workout.id) { clearPilates(); return; }
+  const result = pilates.advanceClock(pilatesClock, workout);
+  if (result.done.length || result.clock !== pilatesClock) applyPilates(result, workout);
+  else drawPilates();
+}
+
+// Stato del timer per l'esercizio aperto: in corso, in pausa, fatto o da avviare.
+function pilatesStateFor(workout, index) {
+  const total = workout.exercises[index].seconds * 1000;
+  if (pilatesClock?.workoutId === workout.id && pilatesClock.phase === 'exercise' && pilatesClock.index === index) {
+    return { remaining: pilates.remainingMs(pilatesClock), total, mode: pilatesClock.running ? 'running' : 'paused' };
+  }
+  if (activeWorkout?.workoutId === workout.id && pilatesDone(workout).has(index)) return { remaining: 0, total, mode: 'done' };
+  return { remaining: total, total, mode: 'idle' };
+}
+
+function drawPilates() {
+  const workout = workouts.find((item) => item.mode === 'pilates' && pilatesRouteIndex(item) >= 0);
+  if (!workout) { hidePausePanel(); return; }
+  const index = pilatesRouteIndex(workout);
+  pilatesView?.update(pilatesStateFor(workout, index));
+  if (pilatesClock?.workoutId === workout.id && pilatesClock.phase === 'pause') showPausePanel(workout);
+  else hidePausePanel();
+}
+
+function showPausePanel(workout) {
+  const next = workout.exercises[pilatesClock.index];
+  const remaining = Math.ceil(pilates.remainingMs(pilatesClock) / 1000);
+  const total = Math.max(1, Math.round(pilatesClock.duration / 1000));
+  if (pauseView?.key === `${pilatesClock.workoutId}:${pilatesClock.index}`) { pauseView.update(remaining, total); return; }
+  document.querySelector('#exerciseNav').hidden = true;
+  const adjust = (delta) => { pilatesClock = pilates.adjustPause(pilatesClock, delta); savePilatesClock(); pauseView?.update(Math.ceil(pilates.remainingMs(pilatesClock) / 1000), Math.max(1, Math.round(pilatesClock.duration / 1000))); };
+  pauseView = renderRest(restPanel, {
+    remaining, total,
+    over: 'Pausa', step: 5, skipLabel: 'Inizia ora',
+    next: `Prossimo: ${next.title}`,
+    detail: `${pilates.clockText(next.seconds)} · ${pilates.exerciseMeta(next)}`,
+    onMinus: () => adjust(-5),
+    onPlus: () => adjust(5),
+    onSkip: () => {
+      const target = clockWorkout();
+      if (!target) return;
+      pilatesClock = pilates.skipPause(pilatesClock, target);
+      savePilatesClock();
+      hidePausePanel();
+      openRoute(`#/esercizio/${target.id}/${target.exercises[pilatesClock.index].id}`);
+    },
+  });
+  pauseView.key = `${pilatesClock.workoutId}:${pilatesClock.index}`;
+}
+
+function hidePausePanel() {
+  if (!pauseView) return;
+  pauseView = null;
+  restPanel.hidden = true;
+  if (!screens.exercise.hidden) document.querySelector('#exerciseNav').hidden = false;
+}
+
+// La pagina dell'esercizio in modalità Pilates: anello, Pausa/Fatto, dati e ultime volte.
+function renderPilatesExercise(workout, exercise) {
+  const index = workout.exercises.indexOf(exercise);
+  const history = readExerciseHistory(storage, workout.id, exercise.id).filter((entry) => entry.rows[0]?.seconds > 0)
+    .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
+  pilatesView = renderPilatesBlock(document.querySelector('#pilatesBlock'), {
+    exercise, history,
+    state: pilatesStateFor(workout, index),
+    onStart: () => {
+      if (activeWorkout?.workoutId !== workout.id && !startWorkout(workout)) return;
+      unlockRestAudio();
+      pilatesClock = pilates.startExercise(workout, index);
+      savePilatesClock();
+      drawPilates();
+    },
+    onPause: () => { pilatesClock = pilates.pauseClock(pilatesClock); savePilatesClock(); drawPilates(); },
+    onResume: () => { pilatesClock = pilates.resumeClock(pilatesClock); savePilatesClock(); drawPilates(); },
+    onDone: () => {
+      if (activeWorkout?.workoutId !== workout.id && !startWorkout(workout)) return;
+      unlockRestAudio();
+      // «Fatto» senza aver avviato il timer: l'esercizio conta per la sua durata.
+      const running = pilatesClock?.workoutId === workout.id && pilatesClock.phase === 'exercise' && pilatesClock.index === index
+        ? pilatesClock : { ...pilates.startExercise(workout, index), startedAt: Date.now() - exercise.seconds * 1000 };
+      applyPilates(pilates.finishExercise(running, workout), workout, { signal: false });
+    },
+  });
+  drawPilates();
+}
+
+setInterval(tickPilates, 250);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tickPilates(); });
+
 function openRoute(route) {
   if (window.location.hash === route) renderRoute();
   else window.location.hash = route;
@@ -1052,8 +1341,10 @@ function accountInitial() {
 
 function renderHome() {
   renderHomeScreen(screens.home, {
-    workouts,
+    workouts: modeWorkouts(),
     storage,
+    pilates: isPilates(),
+    streak: isPilates() ? daysInRow(modeSessions()) : 0,
     activeWorkoutId: activeWorkout?.workoutId ?? null,
     initial: accountInitial(),
     canAdd: !demoPreview,
@@ -1068,8 +1359,9 @@ function renderHome() {
 const historyState = { year: new Date().getFullYear(), month: new Date().getMonth(), filter: null };
 function renderHistoryScreen() {
   if (storage) backfillSessions(storage, workouts);
-  const sessions = storage ? loadSessions(storage) : [];
-  const titles = historyTitles(sessions, workouts);
+  // Lo Storico mostra solo le sessioni della modalità attiva.
+  const sessions = modeSessions();
+  const titles = historyTitles(sessions, modeWorkouts());
   if (historyState.filter && !titles.includes(historyState.filter)) historyState.filter = null;
   renderHistoryView(screens.history, {
     view: historyView(sessions, { year: historyState.year, month: historyState.month, workoutTitle: historyState.filter }),
@@ -1077,6 +1369,7 @@ function renderHistoryScreen() {
     month: historyState.month,
     titles,
     filter: historyState.filter,
+    pilates: isPilates(),
     initial: accountInitial(),
     onAccount: () => openRoute('#/account'),
     onFilter: (title) => { historyState.filter = title; renderHistoryScreen(); },
@@ -1448,7 +1741,7 @@ const TAB_SCREENS = { home: 'schede', history: 'storico', nutrition: 'nutrizione
 // Pallino sulla voce Social: nuovi commenti o «Forza» non ancora visti.
 let socialUnread = false;
 // Schermate già passate al nuovo design: senza la vecchia intestazione.
-const NEW_DESIGN_SCREENS = new Set(['home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'summary', 'coach', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
+const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'summary', 'coach', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
 
 function renderChrome(screen) {
   document.querySelector('#phoneShell').dataset.chrome = NEW_DESIGN_SCREENS.has(screen) ? 'new' : 'legacy';
@@ -1461,6 +1754,7 @@ function renderWorkout(workout) {
   const active = activeWorkout?.workoutId === workout.id;
   renderWorkoutScreen(screens.workout, document.querySelector('#dockSlot'), {
     workout, storage, active,
+    pilatesProgress: workout.mode === 'pilates' ? { done: pilatesDone(workout), current: pilatesClock?.workoutId === workout.id ? pilatesClock.index : null } : null,
     editable: canEditWorkout(workout),
     onBack: () => openRoute('#/schede'),
     onOpenExercise: (exercise) => openRoute(`#/esercizio/${workout.id}/${exercise.id}`),
@@ -1485,13 +1779,14 @@ const draftRoute = () => (workoutDraft?.id ? `#/modifica-scheda/${workoutDraft.i
 function renderWorkoutForm(workout) {
   if (!workoutDraft || workoutDraft.id !== (workout?.id ?? null)) {
     discardDraft();
-    workoutDraft = { id: workout?.id ?? null, title: workout?.title ?? '', exercises: structuredClone(workout?.exercises ?? []), createdIds: [], dirty: false };
+    const mode = workout ? (workout.mode === 'pilates' ? 'pilates' : 'gym') : currentMode();
+    workoutDraft = { id: workout?.id ?? null, title: workout?.title ?? '', exercises: structuredClone(workout?.exercises ?? []), createdIds: [], dirty: false, mode };
   }
   renderNewWorkout(screens.workoutForm, document.querySelector('#dockSlot'), {
     draft: workoutDraft,
     editing: !!workout,
     onClose: () => {
-      if (workoutDraft.dirty && !window.confirm('Uscire senza salvare? Le modifiche alla scheda andranno perse.')) return;
+      if (workoutDraft.dirty && !window.confirm(`Uscire senza salvare? Le modifiche alla ${workoutDraft.mode === 'pilates' ? 'sequenza' : 'scheda'} andranno perse.`)) return;
       discardDraft();
       openRoute(workout ? `#/scheda/${workout.id}` : '#/schede');
     },
@@ -1537,7 +1832,7 @@ function saveDraft() {
   } else {
     id = makeId();
     // La nuova scheda va in fondo alla lista, come nel programma.
-    next.push({ id, title, source: 'personal', exercises: structuredClone(draft.exercises) });
+    next.push({ id, title, source: 'personal', exercises: structuredClone(draft.exercises), ...(draft.mode === 'pilates' ? { mode: 'pilates' } : {}) });
   }
   if (!saveWorkouts(storage, next)) return 'Non riesco a salvare la scheda su questo dispositivo.';
   workouts = next;
@@ -1552,6 +1847,27 @@ function saveDraft() {
   workoutDraft = null;
   openRoute(editing ? `#/scheda/${id}` : '#/schede');
   return '';
+}
+
+// Nuovo esercizio della modalità giusta: a tempo in Pilates, serie/ripetizioni o tempo in Palestra.
+function renderAnyExerciseForm(workout, exercise, inDraft = false) {
+  if (workout.mode !== 'pilates') { renderExerciseForm(workout, exercise, inDraft); return 'exerciseForm'; }
+  const backRoute = inDraft ? draftRoute() : `#/scheda/${workout.id}`;
+  renderPilatesExerciseForm(screens.pilatesForm, document.querySelector('#dockSlot'), {
+    workoutTitle: workout.title,
+    exercise,
+    referenceName: exercise?.reference ? 'Video di riferimento salvato' : null,
+    onBack: () => openRoute(backRoute),
+    onSave: async (values, referenceFile, ui) => {
+      if (demoPreview || accessMode === 'coach' || (!inDraft && !canEditWorkout(workout))) return;
+      const id = exercise?.id ?? makeId();
+      await storeExercise({
+        exercise: { id, mode: 'pilates', ...values, ...(values.howTo ? {} : { howTo: undefined }) },
+        editing: !!exercise, inDraft, workoutId: workout.id, referenceFile, ...ui,
+      });
+    },
+  });
+  return 'pilatesForm';
 }
 
 function renderExerciseForm(workout, exercise, inDraft = false) {
@@ -1931,8 +2247,20 @@ function renderExercise(workout, exercise) {
   renderExerciseNav(workout, exercise);
   document.querySelector('#editExerciseButton').onclick = () => openRoute(`#/modifica-esercizio/${workout.id}/${exercise.id}`);
   document.querySelector('#deleteExerciseButton').onclick = () => deleteExercise(workout.id, exercise.id);
-  renderHistory(workout, exercise);
-  renderSetRows(workout, exercise);
+  // Pilates: a tempo, niente serie, ripetizioni o kg.
+  const pilatesExercise = exercise.mode === 'pilates';
+  for (const id of ['targetSection', 'exerciseHistorySection', 'exerciseSetsSection']) document.getElementById(id).hidden = pilatesExercise;
+  document.querySelector('#pilatesBlock').hidden = !pilatesExercise;
+  document.querySelector('.bg-video--placeholder').classList.toggle('bg-video--pilates', pilatesExercise);
+  document.querySelector('#openAnalysisButton small').textContent = pilatesExercise ? 'Analisi della postura e tracking della posizione' : 'Analisi della tecnica e tracking della posizione';
+  if (pilatesExercise) {
+    document.querySelector('#curlInstructions').hidden = true;
+    renderPilatesExercise(workout, exercise);
+  } else {
+    pilatesView = null;
+    renderHistory(workout, exercise);
+    renderSetRows(workout, exercise);
+  }
   loadReferenceForExercise(workout, exercise, curl);
 }
 
@@ -2173,7 +2501,13 @@ function renderRoute() {
   const workout = workouts.find((item) => item.id === parts[2]);
   const exercise = workout?.exercises.find((item) => item.id === parts[3]);
   let screen = 'home';
-  if (parts[1] === 'prova-modelli') {
+  if (needsWelcome && !['registrati', 'account', 'nuova-password'].includes(parts[1])) {
+    screen = 'welcome';
+    renderWelcome(screens.welcome, {
+      onChoose: (mode) => { needsWelcome = false; chooseMode(mode, { pending: true }); openRoute('#/registrati'); },
+      onLogin: () => { needsWelcome = false; chooseMode(currentMode()); openRoute('#/account'); },
+    });
+  } else if (parts[1] === 'prova-modelli') {
     screen = 'bench';
     // Solo nella versione di prova: il modulo e i modelli si caricano qui.
     import('./model-bench.js').then(({ renderBench }) => renderBench(screens.bench, { onBack: () => openRoute('#/account') }));
@@ -2244,11 +2578,9 @@ function renderRoute() {
     screen = 'summary';
     renderSummaryScreen(workout, Number(parts[3]), Number(parts[4]));
   } else if (parts[1] === 'nuovo-esercizio' && parts[2] === 'bozza' && workoutDraft) {
-    screen = 'exerciseForm';
-    renderExerciseForm(workoutDraft, null, true);
+    screen = renderAnyExerciseForm(workoutDraft, null, true);
   } else if (parts[1] === 'modifica-esercizio' && parts[2] === 'bozza' && workoutDraft?.exercises.some((item) => item.id === parts[3])) {
-    screen = 'exerciseForm';
-    renderExerciseForm(workoutDraft, workoutDraft.exercises.find((item) => item.id === parts[3]), true);
+    screen = renderAnyExerciseForm(workoutDraft, workoutDraft.exercises.find((item) => item.id === parts[3]), true);
   } else if (parts[1] === 'nuova-scheda' && !demoPreview) {
     screen = 'workoutForm';
     renderWorkoutForm(null);
@@ -2256,11 +2588,9 @@ function renderRoute() {
     screen = 'workoutForm';
     renderWorkoutForm(workout);
   } else if (parts[1] === 'nuovo-esercizio' && canEditWorkout(workout)) {
-    screen = 'exerciseForm';
-    renderExerciseForm(workout, null);
+    screen = renderAnyExerciseForm(workout, null);
   } else if (parts[1] === 'modifica-esercizio' && canEditWorkout(workout) && exercise) {
-    screen = 'exerciseForm';
-    renderExerciseForm(workout, exercise);
+    screen = renderAnyExerciseForm(workout, exercise);
   } else {
     renderHome();
   }
@@ -2268,7 +2598,7 @@ function renderRoute() {
   accessMode = cloudUser ? (screen === 'coach' ? 'coach' : 'client') : null;
   renderChrome(screen);
   updateWorkoutTimer();
-  if (screen !== 'exercise') { document.querySelector('#exerciseNav').hidden = true; hideRestPanel(); } else showRestIfHere();
+  if (screen !== 'exercise') { document.querySelector('#exerciseNav').hidden = true; hideRestPanel(); } else { showRestIfHere(); drawPilates(); }
   if (screen !== 'exercise') {
     referenceVideo.pause();
     stopReferencePose();
@@ -2332,27 +2662,38 @@ document.querySelector('#exerciseForm').addEventListener('submit', async (event)
   if (mode === 'time' && (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(timeSets) || timeSets < 1)) {
     showFormError('#exerciseFormError', 'Inserisci una durata in minuti e un numero di serie validi.'); return;
   }
-  const next = inDraft ? null : structuredClone(workouts);
-  const editedWorkout = inDraft ? workoutDraft : next.find((item) => item.id === workoutId);
   const id = editing ? parts[3] : makeId();
-  const previous = editing ? editedWorkout.exercises.find((item) => item.id === id) : null;
   const exercise = mode === 'time' ? { id, title, mode, minutes, sets: timeSets, restSeconds } : { id, title, mode, sets, reps, restSeconds };
   const referenceFile = document.querySelector('#personalReferenceInput').files?.[0];
   const saveButton = document.querySelector('#saveExerciseButton');
-  saveButton.disabled = true;
-  showFormError('#exerciseFormError', '');
   const progress = document.querySelector('#referenceProgress');
-  const report = (text) => { progress.hidden = false; progress.textContent = text; };
+  await storeExercise({
+    exercise, editing, inDraft, workoutId, referenceFile, button: saveButton,
+    report: (text) => { progress.hidden = false; progress.textContent = text; },
+    fail: (message) => showFormError('#exerciseFormError', message),
+    done: () => { progress.hidden = true; },
+  });
+});
+
+// Salva un esercizio (Palestra o Pilates) nella scheda o nella bozza, con l'eventuale
+// video di riferimento personale: analisi, salvataggio sul dispositivo e sull'account.
+async function storeExercise({ exercise, editing, inDraft, workoutId, referenceFile, button: saveButton, report, fail, done }) {
+  const next = inDraft ? null : structuredClone(workouts);
+  const editedWorkout = inDraft ? workoutDraft : next.find((item) => item.id === workoutId);
+  const { id, title, mode } = exercise;
+  const previous = editing ? editedWorkout.exercises.find((item) => item.id === id) : null;
+  saveButton.disabled = true;
+  fail('');
   let uploadedPath = null;
   try {
     const oldReference = editing ? await getPersonalReference(personalReferenceId(id)).catch(() => null) : null;
     const savedReference = previous?.reference ?? null;
     if ((oldReference || savedReference) && !referenceFile && (previous.title !== title || previous.mode !== mode)) {
-      showFormError('#exerciseFormError', 'Hai cambiato l’esercizio: carica un nuovo video di riferimento per sostituire quello precedente.');
+      fail('Hai cambiato l’esercizio: carica un nuovo video di riferimento per sostituire quello precedente.');
       return;
     }
     let newReference;
-    if (referenceFile) newReference = await analyzePersonalReference(referenceFile, exercise);
+    if (referenceFile) newReference = await analyzePersonalReference(referenceFile, exercise, report);
     // Con l'account il video di riferimento si salva sul server: un video leggero
     // subito, uno pesante dopo essere stato ridotto in background (finishReference).
     if (newReference && cloudUser && cloudClient && !demoPreview && newReference.video.size <= PERSONAL_REFERENCE_MAX_BYTES) {
@@ -2385,7 +2726,7 @@ document.querySelector('#exerciseForm').addEventListener('submit', async (event)
         else await deletePersonalReference(personalReferenceId(id));
       }
       if (uploadedPath) removeReferenceVideo(cloudClient, uploadedPath).catch(() => {});
-      showFormError('#exerciseFormError', 'Non riesco a salvare l’esercizio su questo dispositivo.');
+      fail('Non riesco a salvare l’esercizio su questo dispositivo.');
       return;
     }
     // Il riferimento precedente è stato sostituito: si libera lo spazio sul server.
@@ -2397,12 +2738,12 @@ document.querySelector('#exerciseForm').addEventListener('submit', async (event)
   } catch (error) {
     console.error('BUDDYGYM reference failed', error);
     if (uploadedPath) removeReferenceVideo(cloudClient, uploadedPath).catch(() => {});
-    showFormError('#exerciseFormError', error.message || 'Non riesco a salvare il video di riferimento.');
+    fail(error.message || 'Non riesco a salvare il video di riferimento.');
   } finally {
     saveButton.disabled = false;
-    document.querySelector('#referenceProgress').hidden = true;
+    done();
   }
-});
+}
 
 // Oltre questa soglia il video personale viene ridotto prima di salvarlo sul dispositivo.
 const PERSONAL_REFERENCE_MAX_BYTES = 20 * 1024 * 1024;

@@ -29,7 +29,7 @@ export function normalizeProfile(values, today = new Date().toISOString().slice(
 
 export async function loadProfile(client, userId) {
   const { data, error } = await client.from('buddy_profiles')
-    .select('first_name,last_name,birth_date,weight_kg,sex,alias,share_stats,share_loads')
+    .select('first_name,last_name,birth_date,weight_kg,sex,alias,share_stats,share_loads,mode')
     .eq('user_id', userId).maybeSingle();
   if (error) throw error;
   return data;
@@ -50,6 +50,12 @@ export async function saveAlias(client, userId, alias) {
 
 export async function saveBirthDate(client, userId, birthDate) {
   const { error } = await client.from('buddy_profiles').upsert({ user_id: userId, birth_date: birthDate, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+// Modalità dell'account (Palestra o Pilates): all'accesso l'app entra in questa.
+export async function saveMode(client, userId, mode) {
+  const { error } = await client.from('buddy_profiles').upsert({ user_id: userId, mode, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
   if (error) throw error;
 }
 

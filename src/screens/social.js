@@ -41,6 +41,14 @@ export function ago(iso, now = Date.now()) {
 }
 
 function stats(post) {
+  if (post.mode === 'pilates') {
+    const items = [];
+    if (post.stats.duration !== undefined) items.push(['Durata', formatDuration(post.stats.duration)], ['Esercizi', String(post.stats.exercises ?? 0)]);
+    if (post.stats.equipment) items.push(['Attrezzo', post.stats.equipment]);
+    if (!items.length) return null;
+    return el('div', { className: `bg-post__stats${items.length === 2 ? ' bg-post__stats--two' : items.length === 1 ? ' bg-post__stats--one' : ''}` },
+      items.map(([label, value]) => el('div', {}, el('span', { text: label }), el('b', { text: value }))));
+  }
   const items = [['Durata', formatDuration(post.stats.duration ?? 0)]];
   if (post.showLoads && post.stats.volume !== undefined) items.push(['Volume', `${thousands(post.stats.volume)} kg`]);
   items.push(['Serie', String(post.stats.sets ?? 0)]);
@@ -50,7 +58,9 @@ function stats(post) {
 
 export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor, onMenu, preview = true }) {
   const name = names.get(post.userId) ?? 'Utente';
-  const records = post.showLoads ? (post.stats.records ?? []) : [];
+  const pilates = post.mode === 'pilates';
+  const records = post.showLoads && !pilates ? (post.stats.records ?? []) : [];
+  const milestones = pilates ? (post.stats.milestones ?? []) : [];
   const last = post.comments.at(-1);
   const strength = el('button', {
     type: 'button', className: 'bg-post__act', 'aria-pressed': String(post.strengthByMe),
@@ -61,7 +71,7 @@ export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor
       el('button', { type: 'button', className: 'bg-post__author', 'aria-label': `Profilo di ${name}`, onClick: onAuthor }, avatar(post.userId, name)),
       el('span', { className: 'bg-post__who' },
         el('button', { type: 'button', className: 'bg-post__name', onClick: onAuthor, text: post.mine ? 'Tu' : name }),
-        el('span', { className: 'bg-post__when', text: `${postWhen(post.createdAt)} · ${post.workoutTitle}${post.visibility === 'private' ? ' · solo io' : ''}` })),
+        el('span', { className: 'bg-post__when', text: `${postWhen(post.createdAt)} · ${pilates && post.stats.equipment ? post.stats.equipment : post.workoutTitle}${post.visibility === 'private' ? ' · solo io' : ''}` })),
       onMenu ? el('button', { type: 'button', className: 'bg-iconbtn bg-iconbtn--ghost', 'aria-label': 'Altre azioni', onClick: onMenu }, icon('more')) : null),
     el('button', { type: 'button', className: 'bg-post__open', onClick: onOpen, disabled: !onOpen },
       el('h3', { className: 'bg-post__title', text: post.title }),
@@ -69,6 +79,8 @@ export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor
     stats(post),
     records.length ? el('div', { className: 'bg-post__chips' }, records.map((record) => el('span', { className: 'bg-chip' },
       icon('trophy', { small: true }), `${record.title} · ${thousands(record.load)} kg × ${record.reps}`))) : null,
+    milestones.length ? el('div', { className: 'bg-post__chips' }, milestones.map((item) => el('span', { className: 'bg-chip' },
+      icon('star', { small: true }), item.title))) : null,
     el('div', { className: 'bg-post__foot' }, strength,
       el('button', { type: 'button', className: 'bg-post__act', 'aria-label': `Commenti, ${post.comments.length}`, onClick: onComments ?? onOpen },
         icon('comment', { small: true }), String(post.comments.length))),
@@ -97,13 +109,16 @@ export function renderSocialFeed(root, { me, initial, leaderboard, notifications
     const mine = leaderboard.find((row) => row.user_id === me);
     if (mine) top.push(mine);
   }
+  // Classifica tra persone della stessa modalità: kg in Palestra, minuti in Pilates.
+  const pilatesBoard = leaderboard[0]?.mode === 'pilates';
+  const score = (row) => (pilatesBoard ? `${thousands(Number(row.minutes ?? 0))} min` : `${thousands(Number(row.volume))} kg`);
   const ranking = leaderboard.length > 1 ? el('button', { type: 'button', className: 'bg-weekstrip', onClick: onLeaderboard, 'aria-label': 'Classifica della settimana, apri la classifica completa' },
-    el('span', { className: 'bg-weekstrip__title' }, 'Classifica della settimana', el('span', { text: 'volume sollevato' })),
+    el('span', { className: 'bg-weekstrip__title' }, 'Classifica della settimana', el('span', { text: pilatesBoard ? 'minuti di pratica' : 'volume sollevato' })),
     top.map((row) => el('span', { className: `bg-rank${row.user_id === me ? ' bg-rank--me' : ''}` },
       el('i', { text: String(leaderboard.indexOf(row) + 1) }),
       avatar(row.user_id, row.alias, 'bg-av--sm'),
       el('span', { text: row.user_id === me ? 'Tu' : row.alias }),
-      el('b', { text: `${thousands(Number(row.volume))} kg` })))) : null;
+      el('b', { text: score(row) })))) : null;
   // Le richieste di amicizia hanno il loro riquadro: restano finché non si accetta o rifiuta.
   const news = notifications.filter((group) => group.unread && group.kind !== 'friend_request').slice(0, 4);
   const pending = requests.length ? el('div', { className: 'bg-news', role: 'region', 'aria-label': 'Richieste di amicizia' },
@@ -137,14 +152,15 @@ export function renderSocialFeed(root, { me, initial, leaderboard, notifications
 }
 
 export function renderLeaderboard(root, { me, rows, onBack, onAuthor }) {
+  const pilatesBoard = rows[0]?.mode === 'pilates';
   root.replaceChildren(
     topBar({ title: 'Classifica', onBack }),
     el('main', {},
-      el('div', { className: 'bg-pagehead bg-pagehead--tight' }, el('h1', { text: 'Classifica' }), el('p', { text: 'Volume sollevato da lunedì' })),
+      el('div', { className: 'bg-pagehead bg-pagehead--tight' }, el('h1', { text: 'Classifica' }), el('p', { text: pilatesBoard ? 'Minuti di pratica da lunedì' : 'Volume sollevato da lunedì' })),
       el('div', { className: 'bg-weekstrip bg-weekstrip--full' }, rows.map((row, index) => el('button', {
         type: 'button', className: `bg-rank${row.user_id === me ? ' bg-rank--me' : ''}`, onClick: () => onAuthor(row.user_id),
       }, el('i', { text: String(index + 1) }), avatar(row.user_id, row.alias, 'bg-av--sm'),
-      el('span', { text: row.user_id === me ? 'Tu' : row.alias }), el('b', { text: `${thousands(Number(row.volume))} kg` }))))));
+      el('span', { text: row.user_id === me ? 'Tu' : row.alias }), el('b', { text: pilatesBoard ? `${thousands(Number(row.minutes ?? 0))} min` : `${thousands(Number(row.volume))} kg` }))))));
 }
 
 export function renderPostDetail(root, dock, { me, post, names, onBack, onStrength, onAuthor, onMenu, onSend, onCommentMenu }) {
@@ -185,6 +201,29 @@ export function renderPostDetail(root, dock, { me, post, names, onBack, onStreng
   return { focus: () => input.focus() };
 }
 
+function pilatesFriendStats(stats, weeks, top) {
+  const milestones = stats.milestones ?? [];
+  return [
+    el('div', { className: 'bg-grid2' },
+      el('div', { className: 'bg-stat' }, el('b', { text: String(stats.minutes ?? 0) }), el('span', { text: 'minuti di pratica' })),
+      el('div', { className: 'bg-stat' }, el('b', { text: String(stats.workouts ?? 0) }), el('span', { text: stats.workouts === 1 ? 'sessione' : 'sessioni' })),
+      el('div', { className: 'bg-stat' }, el('b', { text: String(stats.weeksStreak ?? 0) }), el('span', { text: 'settimane di fila' })),
+      el('div', { className: 'bg-stat' }, el('b', { text: String(milestones.length) }), el('span', { text: 'traguardi' }))),
+    el('div', { className: 'bg-month bg-month--spaced' },
+      el('div', { className: 'bg-month__head' }, el('b', { text: 'Minuti per settimana' }), el('span', { text: 'ultime 8' })),
+      el('div', { className: 'bg-bars', role: 'img', 'aria-label': `Minuti delle ultime 8 settimane: ${weeks.map((value) => `${Number(value)} min`).join(', ')}` },
+        weeks.map((value, index) => el('i', { className: index === weeks.length - 1 ? 'on' : '', style: `height:${Math.max(4, Math.round(Number(value) / top * 100))}%` }))),
+      el('div', { className: 'bg-bars__x', 'aria-hidden': 'true' }, weeks.map((_, index) => el('span', { text: `S${index + 1}` })))),
+    milestones.length ? [
+      el('div', { className: 'bg-blocktitle bg-blocktitle--rows' }, el('h2', { text: 'Traguardi' })),
+      el('div', { className: 'bg-exlist' }, milestones.slice(0, 6).map((item) => el('div', { className: 'bg-exrow' },
+        el('span', { className: 'bg-exrow__num' }, icon('star', { small: true })),
+        el('span', { className: 'bg-exrow__body' }, el('span', { className: 'bg-exrow__name', text: item.title }),
+          el('span', { className: 'bg-exrow__meta', text: recordDate(Number(item.at)) }))))),
+    ] : null,
+  ];
+}
+
 export function renderFriendProfile(root, { friend, stats, period, posts, names, onBack, onPeriod, onFriendship, onMenu, onPost, onStrength }) {
   const since = stats?.since ? `amici da ${new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(new Date(stats.since))}` : '';
   const hidden = !stats || stats.hidden;
@@ -210,12 +249,14 @@ export function renderFriendProfile(root, { friend, stats, period, posts, names,
           el('div', { className: 'bg-seg', role: 'tablist' }, [['week', 'Settimana'], ['month', 'Mese'], ['year', 'Anno']].map(([id, label]) => el('button', {
             type: 'button', role: 'tab', 'aria-selected': String(period === id), onClick: () => onPeriod(id), text: label,
           }))),
-          el('div', { className: 'bg-grid2' },
+          // Amico in modalità Pilates: minuti, sessioni, settimane di fila e traguardi (mai kg).
+          stats.mode === 'pilates' ? pilatesFriendStats(stats, weeks, top) : null,
+          stats.mode === 'pilates' ? null : el('div', { className: 'bg-grid2' },
             el('div', { className: 'bg-stat' }, el('b', { text: String(stats.workouts ?? 0) }), el('span', { text: 'allenamenti' })),
             el('div', { className: 'bg-stat' }, el('b', { text: stats.volume == null ? '—' : thousands(Number(stats.volume)) }), el('span', { text: 'kg di volume' })),
             el('div', { className: 'bg-stat' }, el('b', { text: hours ? `${hours} h ${minutes}` : `${minutes} min` }), el('span', { text: 'tempo in palestra' })),
             el('div', { className: 'bg-stat' }, el('b', { text: stats.records == null ? '—' : String(stats.records) }), el('span', { text: 'nuovi record' }))),
-          stats.volume == null ? null : el('div', { className: 'bg-month bg-month--spaced' },
+          stats.volume == null || stats.mode === 'pilates' ? null : el('div', { className: 'bg-month bg-month--spaced' },
             el('div', { className: 'bg-month__head' }, el('b', { text: 'Volume per settimana' }), el('span', { text: 'ultime 8' })),
             el('div', { className: 'bg-bars', role: 'img', 'aria-label': `Volume delle ultime 8 settimane: ${weeks.map((value) => `${thousands(Number(value))} kg`).join(', ')}` },
               weeks.map((value, index) => el('i', { className: index === weeks.length - 1 ? 'on' : '', style: `height:${Math.max(4, Math.round(Number(value) / top * 100))}%` }))),
@@ -281,15 +322,25 @@ export function openPublishSheet({ session, suggested, onPublish }) {
   const status = el('p', { className: 'bg-formstatus bg-formstatus--error', role: 'alert' });
   const summary = session.summary ?? {};
   const preview = el('div', { className: 'bg-post__stats bg-post__stats--sheet' });
+  // In Pilates l'interruttore diventa «Mostra durata ed esercizi»: spento resta l'attrezzo.
+  const pilates = session.mode === 'pilates';
   const renderPreview = () => {
-    const items = [['Durata', formatDuration(session.endedAt - session.startedAt)]];
-    if (showLoads) items.push(['Volume', `${thousands(summary.volume ?? 0)} kg`]);
-    items.push(['Serie', String(summary.sets ?? 0)]);
+    const items = [];
+    if (pilates) {
+      if (showLoads) items.push(['Durata', formatDuration(session.endedAt - session.startedAt)], ['Esercizi', String(summary.exercisesDone ?? 0)]);
+      items.push(['Attrezzo', (summary.equipment ?? []).join(', ') || '—']);
+    } else {
+      items.push(['Durata', formatDuration(session.endedAt - session.startedAt)]);
+      if (showLoads) items.push(['Volume', `${thousands(summary.volume ?? 0)} kg`]);
+      items.push(['Serie', String(summary.sets ?? 0)]);
+    }
+    preview.classList.toggle('bg-post__stats--one', items.length === 1);
     preview.classList.toggle('bg-post__stats--two', items.length === 2);
     preview.replaceChildren(...items.map(([label, value]) => el('div', {}, el('span', { text: label }), el('b', { text: value }))));
   };
   renderPreview();
-  const loads = el('button', { type: 'button', className: 'bg-switch', role: 'switch', 'aria-checked': 'true', 'aria-label': 'Mostra i carichi' });
+  const loadsLabel = pilates ? 'Mostra durata ed esercizi' : 'Mostra i carichi';
+  const loads = el('button', { type: 'button', className: 'bg-switch', role: 'switch', 'aria-checked': 'true', 'aria-label': loadsLabel });
   loads.addEventListener('click', () => { showLoads = !showLoads; loads.setAttribute('aria-checked', String(showLoads)); renderPreview(); });
   const audienceValue = el('span', { className: 'bg-toggle__value' }, 'Amici', icon('chevronRight', { small: true }));
   const audienceHint = el('small', { text: 'Solo i tuoi amici' });
@@ -311,7 +362,7 @@ export function openPublishSheet({ session, suggested, onPublish }) {
       el('div', {}, el('label', { className: 'bg-flabel', for: 'publishTitle', text: 'Titolo' }), title),
       body, preview,
       el('div', {},
-        el('div', { className: 'bg-toggle' }, el('span', {}, 'Mostra i carichi', el('small', { text: 'kg di ogni esercizio e il record' })), loads),
+        el('div', { className: 'bg-toggle' }, el('span', {}, loadsLabel, el('small', { text: pilates ? 'durata, esercizi fatti e traguardi' : 'kg di ogni esercizio e il record' })), loads),
         audience),
       status, publish),
   });

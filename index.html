@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#132a13" />
     <title>Buddy Gym · Workout</title>
+    <!-- Tema della modalità (Palestra/Pilates) prima del primo disegno: niente lampo di colore. -->
+    <script>try{var m=localStorage.getItem('buddygym:mode'),d=matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.dataset.theme=m==='pilates'?(d?'pilates-dark':'pilates'):(d?'dark':'light')}catch(e){}</script>
     <link rel="stylesheet" href="./style.css" />
     <link rel="stylesheet" href="./src/theme.css" />
     <link rel="stylesheet" href="./src/ui/components.css" />
@@ -24,6 +26,7 @@
         <button type="button" class="account-toggle" id="accountButton">Account</button>
       </header>
       <div id="demoPreviewBar" class="demo-preview-bar" hidden><span id="demoPreviewLabel"></span><button type="button" id="exitDemoPreview">Torna al coach</button></div>
+      <section class="screen" id="welcomeScreen" aria-label="Benvenuto: scegli Palestra o Pilates" hidden></section>
       <section class="screen" id="accessScreen" aria-label="Scegli come accedere" hidden>
         <div class="page-heading"><p class="eyebrow">IL TUO ACCOUNT, DUE SPAZI</p><h1>Come vuoi accedere?</h1><p>Usa lo stesso account per allenarti e per preparare le schede dei tuoi clienti.</p></div>
         <div class="workout-list"><button type="button" class="workout-card" id="chooseClientAccess"><span class="card-icon">↗</span><strong>Cliente</strong><p>Le tue schede e i tuoi allenamenti.</p><span class="card-arrow">Entra come cliente →</span></button><button type="button" class="workout-card" id="chooseCoachAccess"><span class="card-icon">▣</span><strong>Coach</strong><p>Template, esercizi e assegnazioni.</p><span class="card-arrow">Entra come coach →</span></button></div>
@@ -63,6 +66,7 @@
         <div class="management-actions"><button type="button" class="text-action" id="editWorkoutButton">Modifica nome</button><button type="button" class="text-action danger-action" id="deleteWorkoutButton">Elimina scheda</button></div>
       </section>
 
+<section class="screen" id="pilatesFormScreen" aria-label="Aggiungi o modifica esercizio Pilates" hidden></section>
 <section class="screen" id="workoutFormScreen" aria-label="Crea o modifica scheda" hidden></section>
 
 <section class="screen" id="exerciseFormScreen" aria-label="Aggiungi o modifica esercizio" hidden>
@@ -110,7 +114,9 @@
         </section>
         <div class="bg-video bg-video--placeholder" role="img" aria-label="Video di riferimento non disponibile"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Video</div>
 
-        <section class="bg-target" aria-label="Obiettivo dell'esercizio">
+        <div id="pilatesBlock" hidden></div>
+
+        <section class="bg-target" id="targetSection" aria-label="Obiettivo dell'esercizio">
           <div id="targetSetsBlock"><b id="targetSets">—</b><span>serie</span></div>
           <i id="targetCross" aria-hidden="true">×</i>
           <div><b id="targetReps">—</b><span id="targetUnit">ripetizioni</span></div>
@@ -126,7 +132,7 @@
         </section>
         <section class="bg-notecard" id="coachInstructions" hidden><h2>Indicazioni del coach</h2><ul id="coachInstructionList"></ul></section>
 
-        <section aria-label="Storico dell'esercizio">
+        <section id="exerciseHistorySection" aria-label="Storico dell'esercizio">
           <div class="bg-blocktitle"><h2>Scorsa volta</h2><span id="previousWorkoutDate"></span></div>
           <div id="previousWorkoutRows"></div>
           <div class="bg-progress">
@@ -139,7 +145,7 @@
           </div>
         </section>
 
-        <section aria-label="Serie svolte">
+        <section id="exerciseSetsSection" aria-label="Serie svolte">
           <div class="bg-blocktitle"><h2 id="logHeading">Le tue serie</h2><span>oggi</span></div>
           <div id="setRows" class="bg-sets"></div>
           <div class="bg-addset" id="addSetSlot"></div>

@@ -150,6 +150,7 @@ export function renderProfile(root, props) {
       el('div', { className: 'bg-profile' },
         el('div', { className: 'bg-profile__avatar', 'aria-hidden': 'true', text: (alias || email || '?').charAt(0).toLocaleUpperCase('it') }),
         el('div', {}, name, el('p', { className: 'bg-profile__mail', text: email }))),
+      props.modeSection ?? null,
       el('h2', { className: 'bg-section', text: 'Dati principali' }),
       el('div', { className: 'bg-metrics' }, ageRow, rows(0)),
       el('h2', { className: 'bg-section' }, 'Circonferenze ', el('span', { text: 'facoltative' })),

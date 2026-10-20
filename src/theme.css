@@ -1,7 +1,8 @@
 /* BuddyGym — tema. Unica fonte di colori, font, spaziature, raggi e misure.
    Valori da tokens.json del design system BuddyGym (versione 1).
-   Tema scuro principale; il tema chiaro si attiva quando il telefono è in
-   modalità chiara. [data-theme] forza un tema (solo per le prove). */
+   Quattro temi su <html data-theme>: dark e light per la Palestra, pilates e
+   pilates-dark per il Pilates. src/mode.js sceglie il tema dalla modalità e dal
+   chiaro/scuro del telefono; senza data-theme vale il chiaro/scuro di sistema. */
 
 @font-face { font-family: Archivo; font-style: normal; font-display: swap; font-weight: 100 900; src: url(../vendor/fonts/archivo-latin.woff2) format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 @font-face { font-family: Archivo; font-style: normal; font-display: swap; font-weight: 100 900; src: url(../vendor/fonts/archivo-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
@@ -16,6 +17,11 @@
   --olive-300: #90a955;
   --lime-100: #ecf39e;
   --device-black: #000000;
+  --orchid-300: #cdb4db;
+  --petal-200: #ffc8dd;
+  --blush-300: #ffafcc;
+  --icy-100: #bde0fe;
+  --sky-300: #a2d2ff;
 
   /* Token semantici · tema scuro (principale) */
   --surface: var(--forest-900);
@@ -35,6 +41,13 @@
   --focus-ring: var(--lime-100);
   --scrim: rgba(5, 12, 5, 0.72);
   --danger: #ffa08f;
+  --confetti-1: var(--lime-100);
+  --confetti-2: var(--olive-300);
+  --confetti-3: var(--moss-500);
+  --confetti-4: var(--ink);
+  --island-ink: var(--lime-100);
+  --island-sub: var(--olive-300);
+  --island-btn: var(--forest-700);
   color-scheme: dark;
 
   /* Tipografia */
@@ -174,6 +187,44 @@
   --draft-del: 36px;
   --lead-gap: 6px;
   --dragging-opacity: .6;
+  /* Modalità: WelcomeSplitScreen e selettore Palestra | Pilates */
+  --split-icon: 112px;
+  --split-stroke: 2.4;
+  --type-split-label: 800 26px/1 var(--font-display);
+  --track-split-label: -0.01em;
+  --split-gym-top: 40px;
+  --split-pil-bottom: 56px;
+  --split-focus: 3px;
+  --split-focus-inset: -8px;
+  --split-brand-pad: 8px 16px;
+  --type-split-brand: 800 14px/1 var(--font-display);
+  --track-split-brand: .02em;
+  --split-brand-ink: #ffffff;
+  --split-login-bottom: 26px;
+  --type-split-login: 500 13px/18px var(--font-sans);
+  --split-expand: 300ms;
+  --modeseg-pad: 4px;
+  --modeseg-btn: 40px;
+  --type-modeseg: 700 14px/1 var(--font-sans);
+  --modeseg-gap: 6px;
+  /* Pilates: timer dell'esercizio, livello, «Come farlo» */
+  --bigring: 220px;
+  --bigring-stroke: 12;
+  --type-bigring: 800 52px/1 var(--font-display);
+  --track-bigring: -0.02em;
+  --type-bigring-label: 600 12px/16px var(--font-sans);
+  --bigring-label-gap: 6px;
+  --play-btn: 52px;
+  --play-btn-min: 140px;
+  --play-icon: 18px;
+  --level-gap: 3px;
+  --level-bar-w: 6px;
+  --level-bar-h: 14px;
+  --level-bar-radius: 2px;
+  --level-stat-h: 24px;
+  --type-tips: 500 14px/20px var(--font-sans);
+  --type-tips-label: 700 11px/14px var(--font-sans);
+  --track-tips-label: .08em;
   /* Riepilogo di fine allenamento e coriandoli */
   --badge-xl: 72px;
   --badge-xl-icon: 36px;
@@ -293,7 +344,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
+  :root:not([data-theme]) {
     --surface: #f5f8e6;
     --surface-raised: #ffffff;
     --surface-sunken: #e9efd0;
@@ -315,7 +366,7 @@
   }
 }
 
-:root[data-theme="light"] {
+[data-theme="light"] {
   --surface: #f5f8e6;
   --surface-raised: #ffffff;
   --surface-sunken: #e9efd0;
@@ -334,4 +385,91 @@
   --scrim: rgba(19, 42, 19, 0.45);
   --danger: #b3261e;
   color-scheme: light;
+}
+
+/* Pilates · chiaro (principale della modalità): pastello, testi e icone in prugna. */
+[data-theme="pilates"] {
+  --surface: #fff7fa;
+  --surface-raised: #ffffff;
+  --surface-sunken: #fbeaf1;
+  --line: #f0d5e2;
+  --ink: #3a2340;
+  --ink-muted: #6b5571;
+  --accent: #8a5aa3;
+  --accent-soft: #e3f1ff;
+  --on-accent-soft: #2d4a6b;
+  --primary: var(--blush-300);
+  --on-primary: #3a2340;
+  --highlight: var(--petal-200);
+  --on-highlight: #3a2340;
+  --on-highlight-muted: #6e4a66;
+  --focus-ring: #8a5aa3;
+  --scrim: rgba(58, 35, 64, 0.45);
+  --danger: #b3261e;
+  --confetti-1: var(--blush-300);
+  --confetti-2: var(--orchid-300);
+  --confetti-3: var(--sky-300);
+  --confetti-4: #8a5aa3;
+  --island-ink: var(--petal-200);
+  --island-sub: var(--orchid-300);
+  --island-btn: #4a3060;
+  color-scheme: light;
+}
+
+/* Pilates · scuro */
+[data-theme="pilates-dark"] {
+  --surface: #2a1b30;
+  --surface-raised: #36243d;
+  --surface-sunken: #1f1424;
+  --line: #4a3552;
+  --ink: #fbeff5;
+  --ink-muted: #c9b3cf;
+  --accent: var(--orchid-300);
+  --accent-soft: #4a3060;
+  --on-accent-soft: var(--petal-200);
+  --primary: var(--blush-300);
+  --on-primary: #2a1b30;
+  --highlight: var(--petal-200);
+  --on-highlight: #2a1b30;
+  --on-highlight-muted: #6e4a66;
+  --focus-ring: var(--petal-200);
+  --scrim: rgba(10, 5, 12, 0.72);
+  --danger: #ffa08f;
+  --confetti-1: var(--blush-300);
+  --confetti-2: var(--orchid-300);
+  --confetti-3: var(--sky-300);
+  --confetti-4: var(--icy-100);
+  --island-ink: var(--petal-200);
+  --island-sub: var(--orchid-300);
+  --island-btn: #4a3060;
+  color-scheme: dark;
+}
+
+/* Palestra · scuro anche su un elemento interno (le due metà di WelcomeSplitScreen). */
+[data-theme="dark"] {
+  --surface: var(--forest-900);
+  --surface-raised: #1d3a1c;
+  --surface-sunken: #0d1f0d;
+  --line: #2e4d2a;
+  --ink: #eef3d6;
+  --ink-muted: #a9b98c;
+  --accent: var(--olive-300);
+  --accent-soft: var(--forest-700);
+  --on-accent-soft: var(--lime-100);
+  --primary: var(--lime-100);
+  --on-primary: var(--forest-900);
+  --highlight: var(--lime-100);
+  --on-highlight: var(--forest-900);
+  --on-highlight-muted: var(--forest-700);
+  --focus-ring: var(--lime-100);
+  --scrim: rgba(5, 12, 5, 0.72);
+  --danger: #ffa08f;
+  --confetti-1: var(--lime-100);
+  --confetti-2: var(--olive-300);
+  --confetti-3: var(--moss-500);
+  --confetti-4: var(--ink);
+  --island-ink: var(--lime-100);
+  --island-sub: var(--olive-300);
+  --island-btn: var(--forest-700);
+  color-scheme: dark;
 }

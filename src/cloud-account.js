@@ -110,18 +110,18 @@ async function upsertBatches(client, table, rows, onConflict) {
 
 export async function downloadAccount(client, userId, storage) {
   const [remoteWorkouts, remoteHistory, remoteSessions] = await Promise.all([
-    readAll(client, 'buddy_workouts', 'id,title,source,exercises', userId, ['id']),
+    readAll(client, 'buddy_workouts', 'id,title,source,mode,exercises', userId, ['id']),
     readAll(client, 'buddy_exercise_history', 'workout_id,exercise_id,session_id,started_at,ended_at,set_rows', userId, ['workout_id', 'exercise_id', 'session_id']),
-    readAll(client, 'buddy_sessions', 'id,workout_id,workout_title,started_at,ended_at,summary,effort', userId, ['ended_at']),
+    readAll(client, 'buddy_sessions', 'id,workout_id,workout_title,started_at,ended_at,summary,effort,mode', userId, ['ended_at']),
   ]);
   // Storico delle sedute: quello del cloud, se c'è; altrimenti si ricostruisce sul dispositivo.
   if (remoteSessions.length) {
     saveSessions(storage, remoteSessions.map((row) => ({
       id: row.id, workoutId: row.workout_id, title: row.workout_title,
-      startedAt: Number(row.started_at), endedAt: Number(row.ended_at), summary: row.summary, effort: row.effort,
+      startedAt: Number(row.started_at), endedAt: Number(row.ended_at), summary: row.summary, effort: row.effort, mode: row.mode ?? 'gym',
     })));
   }
-  const workouts = remoteWorkouts.length ? remoteWorkouts.map((row) => ({ id: row.id, title: row.title, source: row.source, exercises: row.exercises })) : exampleWorkouts();
+  const workouts = remoteWorkouts.length ? remoteWorkouts.map((row) => ({ id: row.id, title: row.title, source: row.source, exercises: row.exercises, ...(row.mode === 'pilates' ? { mode: 'pilates' } : {}) })) : exampleWorkouts();
   storage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(workouts));
   for (const workout of workouts) for (const exercise of workout.exercises) {
     const entries = remoteHistory.filter((row) => row.workout_id === workout.id && row.exercise_id === exercise.id)
@@ -135,7 +135,7 @@ export async function uploadAccount(client, userId, storage, removedIds = [], re
   const workouts = loadWorkouts(storage);
   const rows = workouts.map((workout) => ({
     user_id: userId, id: workout.id, title: workout.title, source: workout.source,
-    exercises: workout.exercises, updated_at: new Date().toISOString(),
+    mode: workout.mode === 'pilates' ? 'pilates' : 'gym', exercises: workout.exercises, updated_at: new Date().toISOString(),
   }));
   await upsertBatches(client, 'buddy_workouts', rows, 'user_id,id');
   const historyRows = workouts.flatMap((workout) => workout.exercises.flatMap((exercise) =>
@@ -148,7 +148,7 @@ export async function uploadAccount(client, userId, storage, removedIds = [], re
   const sessionRows = loadSessions(storage).map((session) => ({
     user_id: userId, id: session.id, workout_id: session.workoutId, workout_title: session.title,
     started_at: session.startedAt, ended_at: session.endedAt, summary: session.summary ?? {},
-    effort: session.effort ?? null, updated_at: new Date().toISOString(),
+    effort: session.effort ?? null, mode: session.mode === 'pilates' ? 'pilates' : 'gym', updated_at: new Date().toISOString(),
   }));
   await upsertBatches(client, 'buddy_sessions', sessionRows, 'user_id,id');
   for (const { workoutId, exerciseId } of removedExercises) {

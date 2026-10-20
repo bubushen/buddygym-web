@@ -2,10 +2,13 @@
 import { el, emptyState, link, topBar } from '../ui/components.js';
 import { icon } from '../ui/icons.js';
 import { targetLabel } from '../workout-insights.js';
+import { clockText, exerciseMeta, exercisesMinutes } from '../pilates.js';
 
 function kindLabel(exercise) {
+  if (exercise.mode === 'pilates') return exerciseMeta(exercise);
   return exercise.mode === 'time' ? 'Tempo' : 'Serie e ripetizioni';
 }
+const tagLabel = (exercise) => (exercise.mode === 'pilates' ? clockText(exercise.seconds) : targetLabel(exercise));
 
 // Riordino: trascinando la maniglia, oppure con le frecce su/giù quando la maniglia ha il focus.
 function enableReorder(list, draft, onChange) {
@@ -49,21 +52,24 @@ function enableReorder(list, draft, onChange) {
 
 export function renderNewWorkout(root, dock, props) {
   const { draft, editing, onClose, onAddExercise, onOpenExercise, onSave, onDelete } = props;
+  // In Pilates (PilatesNewSessionScreen) la scheda è una sequenza di esercizi a tempo.
+  const pilates = draft.mode === 'pilates';
+  const noun = pilates ? 'sequenza' : 'scheda';
   const rerender = (focusId) => {
     renderNewWorkout(root, dock, props);
     if (focusId) root.querySelector(`.bg-draft__item[data-id="${CSS.escape(focusId)}"] .bg-draft__grip`)?.focus();
   };
-  const name = el('input', { id: 'workoutNameInput', className: 'bg-input', placeholder: 'Es. Upper 1, Lower, Push', maxlength: 60, autocomplete: 'off', value: draft.title || null });
+  const name = el('input', { id: 'workoutNameInput', className: 'bg-input', placeholder: pilates ? 'Es. Mat Flow, Core & Postura' : 'Es. Upper 1, Lower, Push', maxlength: 60, autocomplete: 'off', value: draft.title || null });
   const error = el('p', { className: 'bg-formstatus bg-formstatus--error', role: 'alert' });
   const canSave = () => !!draft.title.trim() && draft.exercises.length > 0;
-  const save = el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--primary', text: 'Salva scheda' });
+  const save = el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--primary', text: `Salva ${noun}` });
   const syncSave = () => {
     save.classList.toggle('bg-btn--disabled', !canSave());
     save.setAttribute('aria-disabled', String(!canSave()));
   };
   name.addEventListener('input', () => { draft.title = name.value; draft.dirty = true; syncSave(); });
   save.addEventListener('click', async () => {
-    if (!draft.title.trim()) { error.textContent = 'Dai un nome alla scheda.'; name.focus(); return; }
+    if (!draft.title.trim()) { error.textContent = `Dai un nome alla ${noun}.`; name.focus(); return; }
     if (!draft.exercises.length) { error.textContent = 'Aggiungi almeno un esercizio.'; return; }
     save.disabled = true;
     try { error.textContent = (await onSave()) ?? ''; } finally { save.disabled = false; }
@@ -74,7 +80,7 @@ export function renderNewWorkout(root, dock, props) {
     el('button', { type: 'button', className: 'bg-draft__body', onClick: () => onOpenExercise(exercise) },
       el('span', { className: 'bg-draft__name', text: exercise.title }),
       el('span', { className: 'bg-draft__meta', text: kindLabel(exercise) })),
-    el('span', { className: 'bg-draft__tag', text: targetLabel(exercise) }),
+    el('span', { className: 'bg-draft__tag', text: tagLabel(exercise) }),
     el('button', {
       type: 'button', className: 'bg-draft__del', 'aria-label': `Rimuovi ${exercise.title}`,
       onClick: () => { draft.exercises = draft.exercises.filter((item) => item !== exercise); draft.dirty = true; rerender(); },
@@ -82,19 +88,20 @@ export function renderNewWorkout(root, dock, props) {
   enableReorder(list, draft, (focusId) => { draft.dirty = true; rerender(focusId); });
 
   const count = draft.exercises.length;
+  const countText = `${count} ${count === 1 ? 'esercizio' : 'esercizi'}${pilates ? ` · ${exercisesMinutes(draft.exercises)} min` : ''}`;
   root.replaceChildren(
-    topBar({ title: editing ? 'Modifica scheda' : 'Nuova scheda', onBack: onClose, backIcon: 'close', backLabel: 'Chiudi senza salvare' }),
+    topBar({ title: editing ? `Modifica ${noun}` : `Nuova ${noun}`, onBack: onClose, backIcon: 'close', backLabel: 'Chiudi senza salvare' }),
     el('main', {},
       el('div', { className: 'bg-exhead' },
-        el('p', { className: 'bg-exhead__over', text: 'Scheda' }),
-        el('h1', { text: editing ? 'Modifica la scheda' : 'Crea la tua scheda' }),
-        el('p', { className: 'bg-exhead__lead', text: 'Dai un nome alla scheda e aggiungi gli esercizi nell\'ordine in cui li farai.' })),
-      el('div', { className: 'bg-fgroup' }, el('label', { className: 'bg-flabel', for: 'workoutNameInput', text: 'Nome scheda' }), name),
-      el('div', { className: 'bg-blocktitle bg-blocktitle--compact' }, el('h2', { text: 'Esercizi' }), count ? el('span', { text: `${count} ${count === 1 ? 'esercizio' : 'esercizi'}` }) : null),
-      count ? list : emptyState('Nessun esercizio ancora.\nAggiungi il primo per poter salvare la scheda.'),
+        el('p', { className: 'bg-exhead__over', text: pilates ? 'Sequenza' : 'Scheda' }),
+        el('h1', { text: editing ? `Modifica la ${noun}` : `Crea la tua ${noun}` }),
+        el('p', { className: 'bg-exhead__lead', text: pilates ? 'Dai un nome e aggiungi gli esercizi nell\'ordine in cui li farai.' : 'Dai un nome alla scheda e aggiungi gli esercizi nell\'ordine in cui li farai.' })),
+      el('div', { className: 'bg-fgroup' }, el('label', { className: 'bg-flabel', for: 'workoutNameInput', text: pilates ? 'Nome sequenza' : 'Nome scheda' }), name),
+      el('div', { className: 'bg-blocktitle bg-blocktitle--compact' }, el('h2', { text: 'Esercizi' }), count ? el('span', { text: countText }) : null),
+      count ? list : emptyState(`Nessun esercizio ancora.\nAggiungi il primo per poter salvare la ${noun}.`),
       el('button', { type: 'button', className: 'bg-addex', onClick: onAddExercise }, icon('plus', { small: true }), 'Aggiungi esercizio'),
       error,
-      editing && onDelete ? el('div', { className: 'bg-workout-actions' }, link({ label: 'Elimina scheda', onClick: onDelete })) : null));
+      editing && onDelete ? el('div', { className: 'bg-workout-actions' }, link({ label: `Elimina ${noun}`, onClick: onDelete })) : null));
   root.querySelector('.bg-workout-actions .bg-link')?.classList.add('bg-link--danger');
   dock.replaceChildren(el('div', { className: 'bg-dock' }, save));
   syncSave();

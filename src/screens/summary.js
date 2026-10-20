@@ -15,7 +15,7 @@ const shortDay = (timestamp) => {
 };
 
 // Coriandoli dai due lati, 22 pezzi per lato, una volta sola.
-function confetti() {
+export function confetti() {
   const box = el('div', { className: 'bg-confetti', 'aria-hidden': 'true' });
   const random = (min, max) => min + Math.random() * (max - min);
   for (const side of ['l', 'r']) {
