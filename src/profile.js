@@ -1,0 +1,67 @@
+const SEX_VALUES = new Set(['male', 'female', 'other', 'prefer_not_to_say']);
+
+export function normalizeProfile(values, today = new Date().toISOString().slice(0, 10)) {
+  const firstName = String(values.firstName ?? '').trim();
+  const lastName = String(values.lastName ?? '').trim();
+  const birthDate = String(values.birthDate ?? '').trim();
+  const weightRaw = String(values.weightKg ?? '').trim();
+  const sex = String(values.sex ?? '').trim();
+  if (firstName.length > 100 || lastName.length > 100) throw new Error('Nome e cognome devono avere al massimo 100 caratteri.');
+  if (birthDate && (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)
+    || Number.isNaN(Date.parse(`${birthDate}T00:00:00Z`))
+    || new Date(`${birthDate}T00:00:00Z`).toISOString().slice(0, 10) !== birthDate
+    || birthDate < '1900-01-01' || birthDate > today)) {
+    throw new Error('Inserisci una data di nascita valida, non futura.');
+  }
+  const weight = weightRaw ? Number(weightRaw) : null;
+  if (weightRaw && (!Number.isFinite(weight) || weight <= 0 || weight > 1000 || Math.round(weight * 10) !== weight * 10)) {
+    throw new Error('Inserisci il peso in kg con al massimo una cifra decimale.');
+  }
+  if (sex && !SEX_VALUES.has(sex)) throw new Error('Seleziona un valore valido per il sesso.');
+  return {
+    first_name: firstName || null,
+    last_name: lastName || null,
+    birth_date: birthDate || null,
+    weight_kg: weight,
+    sex: sex || null,
+  };
+}
+
+export async function loadProfile(client, userId) {
+  const { data, error } = await client.from('buddy_profiles')
+    .select('first_name,last_name,birth_date,weight_kg,sex,alias,share_stats,share_loads')
+    .eq('user_id', userId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// true = libero, false = già preso, null = non verificabile (es. senza rete).
+export async function aliasAvailable(client, alias) {
+  try {
+    const { data, error } = await client.rpc('alias_available', { candidate: alias });
+    return error ? null : data;
+  } catch { return null; }
+}
+
+export async function saveAlias(client, userId, alias) {
+  const { error } = await client.from('buddy_profiles').upsert({ user_id: userId, alias, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+export async function saveBirthDate(client, userId, birthDate) {
+  const { error } = await client.from('buddy_profiles').upsert({ user_id: userId, birth_date: birthDate, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+// Privacy verso gli amici: statistiche e carichi visibili sì/no.
+export async function savePrivacy(client, userId, privacy) {
+  const { error } = await client.from('buddy_profiles').upsert({ user_id: userId, ...privacy, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) throw error;
+}
+
+export async function saveProfile(client, userId, profile) {
+  const { error } = await client.from('buddy_profiles').upsert({
+    user_id: userId, ...profile, updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' });
+  if (error) throw error;
+}

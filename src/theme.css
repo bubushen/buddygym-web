@@ -1,0 +1,337 @@
+/* BuddyGym — tema. Unica fonte di colori, font, spaziature, raggi e misure.
+   Valori da tokens.json del design system BuddyGym (versione 1).
+   Tema scuro principale; il tema chiaro si attiva quando il telefono è in
+   modalità chiara. [data-theme] forza un tema (solo per le prove). */
+
+@font-face { font-family: Archivo; font-style: normal; font-display: swap; font-weight: 100 900; src: url(../vendor/fonts/archivo-latin.woff2) format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: Archivo; font-style: normal; font-display: swap; font-weight: 100 900; src: url(../vendor/fonts/archivo-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: Inter; font-style: normal; font-display: swap; font-weight: 100 900; src: url(../vendor/fonts/inter-latin.woff2) format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: Inter; font-style: normal; font-display: swap; font-weight: 100 900; src: url(../vendor/fonts/inter-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+
+:root {
+  /* Palette di base: mai direttamente nei componenti, solo tramite i token semantici. */
+  --forest-900: #132a13;
+  --forest-700: #31572c;
+  --moss-500: #4f772d;
+  --olive-300: #90a955;
+  --lime-100: #ecf39e;
+  --device-black: #000000;
+
+  /* Token semantici · tema scuro (principale) */
+  --surface: var(--forest-900);
+  --surface-raised: #1d3a1c;
+  --surface-sunken: #0d1f0d;
+  --line: #2e4d2a;
+  --ink: #eef3d6;
+  --ink-muted: #a9b98c;
+  --accent: var(--olive-300);
+  --accent-soft: var(--forest-700);
+  --on-accent-soft: var(--lime-100);
+  --primary: var(--lime-100);
+  --on-primary: var(--forest-900);
+  --highlight: var(--lime-100);
+  --on-highlight: var(--forest-900);
+  --on-highlight-muted: var(--forest-700);
+  --focus-ring: var(--lime-100);
+  --scrim: rgba(5, 12, 5, 0.72);
+  --danger: #ffa08f;
+  color-scheme: dark;
+
+  /* Tipografia */
+  --font-display: "Archivo", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --type-screen-title: 800 32px/36px var(--font-display);
+  --track-screen-title: -0.02em;
+  --type-card-title: 800 22px/26px var(--font-display);
+  --track-card-title: -0.01em;
+  --type-stat: 700 20px/24px var(--font-display);
+  --type-body: 400 15px/22px var(--font-sans);
+  --type-label: 600 13px/18px var(--font-sans);
+  --type-caption: 500 12px/16px var(--font-sans);
+  --type-tab-label: 600 11px/14px var(--font-sans);
+  --type-overline: 700 11px/14px var(--font-sans);
+  --track-overline: 0.08em;
+
+  /* Spaziature */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 32px;
+
+  /* Raggi */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* Misure dei componenti. Non sono in tokens.json: ricavate da bundle.css del
+     design system, raccolte qui perché nei componenti non compaiano numeri. */
+  --border-thin: 1px;
+  --border-strong: 1.5px;
+  --icon-stroke: 2;
+  --icon: 22px;
+  --icon-sm: 16px;
+  --control: 44px;            /* pulsanti dell'app bar, avatar, pulsanti piccoli */
+  --field: 52px;              /* campi di testo, pulsanti a tutta larghezza */
+  --tabs: 5;
+  --tab-pill-width: 56px;
+  --tab-dot: 8px;
+  --tab-dot-inset: 2px;
+  --tab-dot-inset-x: 12px;
+  --tab-pill-height: 32px;
+  --tabbar-bottom: max(22px, env(safe-area-inset-bottom)); /* home indicator di iOS */
+  --type-brand: 800 17px/1 var(--font-display);
+  --track-brand: -0.01em;
+  --type-button: 700 14px/1 var(--font-sans);
+  --type-button-block: 700 15px/1 var(--font-sans);
+  --type-subtitle: 500 13px/18px var(--font-sans);   /* riga sotto i titoli, stati vuoti */
+  --type-avatar: 800 16px/1 var(--font-display);
+  --type-topbar-title: 700 17px/1 var(--font-display);
+  --field-gap: 6px;           /* etichetta → campo → helper */
+  --icon-google: 20px;
+  --google-gap: 10px;        /* logo Google → testo */
+  --focus-width: 2px;         /* anello di focus: 2px, offset 2px */
+  /* Account: profilo, MetricRow e grafico */
+  --avatar-lg: 64px;
+  --type-avatar-lg: 800 26px/1 var(--font-display);
+  --type-value: 700 15px/22px var(--font-sans);
+  --type-delta: 700 13px/18px var(--font-sans);
+  --type-chart-axis: 500 10px/1 var(--font-sans);
+  --metric-row: 56px;
+  --metric-static-pad: calc(var(--space-4) + var(--icon-sm) + var(--space-3)); /* allinea il valore a quello delle righe con chevron */
+  --unit-gap: 2px;
+  --chart-line: 2.5;
+  --chart-dot: 2;
+  --chart-area-opacity: .14;
+  --chevron-turn: .15s;
+  /* Scheda, cronometro e pulsanti fissi in basso */
+  --type-summary: 600 13px/18px var(--font-sans);
+  --type-row-name: 700 15px/20px var(--font-sans);
+  --type-row-num: 800 14px/1 var(--font-display);
+  --type-row-target: 800 15px/1 var(--font-display);
+  --type-start: 800 17px/1 var(--font-display);
+  --type-timer: 800 18px/1 var(--font-display);
+  --type-start-stop: 800 15px/1 var(--font-display);
+  --row-pad-y: 14px;
+  --row-num: 36px;
+  --start-height: 60px;
+  --start-icon: 20px;
+  --dock-bottom: max(28px, env(safe-area-inset-bottom));
+  --startdock-bottom: max(30px, env(safe-area-inset-bottom));
+  --timerbar-height: 48px;
+  --timerbar-pad-end: 6px;
+  --timer-dot: 8px;
+  --timer-btn: 36px;
+  --timer-btn-icon: 14px;
+  --timer-pulse: 1.6s;
+  --pulse-dim: .25;
+  /* Esercizio: video, obiettivo, tabelle, serie, analisi, frecce */
+  --video-ratio: 16 / 10;
+  --icon-lg: 32px;
+  --type-video: 700 15px/1 var(--font-sans);
+  --type-target: 800 30px/1 var(--font-display);
+  --type-target-label: 600 12px/16px var(--font-sans);
+  --type-target-cross: 700 18px/1 var(--font-sans);
+  --type-block-title: 800 20px/24px var(--font-display);
+  --type-table: 500 15px/20px var(--font-sans);
+  --type-table-foot: 600 12px/16px var(--font-sans);
+  --table-head-pad-y: 10px;
+  --table-pad-y: 12px;
+  --set-num: 40px;
+  --set-height: 48px;
+  --type-set: 700 17px/1 var(--font-sans);
+  --type-set-num: 800 15px/1 var(--font-display);
+  --type-sets-head: 600 12px/16px var(--font-sans);
+  --control-sm: 40px;
+  --type-button-sm: 700 13px/1 var(--font-sans);
+  --exnav-bottom: max(28px, env(safe-area-inset-bottom));
+  --type-exnav: 600 13px/1 var(--font-sans);
+  --type-exnav-small: 500 11px/14px var(--font-sans);
+  --exnav-small-opacity: .8;
+  --exnav-name-max: 120px;
+  --exnav-clearance: 120px;   /* spazio in fondo perché le frecce non coprano il contenuto */
+  /* Moduli di scheda ed esercizio */
+  --type-flabel: 600 14px/20px var(--font-sans);
+  --type-input-lg: 600 17px/1 var(--font-sans);
+  --type-lead: 500 14px/20px var(--font-sans);
+  --type-choice: 600 15px/20px var(--font-sans);
+  --type-stepper: 800 20px/1 var(--font-display);
+  --type-stepper-unit: 600 13px/1 var(--font-sans);
+  --type-upload-title: 700 15px/20px var(--font-sans);
+  --type-upload-text: 400 13px/19px var(--font-sans);
+  --type-upload-btn: 700 14px/1 var(--font-sans);
+  --type-draft-tag: 800 14px/1 var(--font-display);
+  --type-note: 500 12px/17px var(--font-sans);
+  --input-lg: 56px;
+  --choice-dot: 22px;
+  --choice-dot-inner: 8px;
+  --choice-dot-border: 2px;
+  --choice-small-opacity: .85;
+  --stepper-btn: 40px;
+  --draft-pad-y: 12px;
+  --draft-del: 36px;
+  --lead-gap: 6px;
+  --dragging-opacity: .6;
+  /* Riepilogo di fine allenamento e coriandoli */
+  --badge-xl: 72px;
+  --badge-xl-icon: 36px;
+  --badge-xl-stroke: 2.5;
+  --type-summary-title: 800 30px/34px var(--font-display);
+  --type-bigtime: 800 64px/1 var(--font-display);
+  --track-bigtime: -0.03em;
+  --type-bigtime-label: 600 12px/16px var(--font-sans);
+  --type-stat-em: 700 12px/16px var(--font-sans);
+  --type-pr: 800 18px/22px var(--font-display);
+  --type-cmp-value: 800 14px/1 var(--font-display);
+  --cmp-label: 64px;
+  --cmp-bar: 14px;
+  --confetti-w: 8px;
+  --confetti-h: 14px;
+  --confetti-disc: 10px;
+  --confetti-radius: 2px;
+  --confetti-time: 2.6s;
+  --confetti-start: 58%;
+  --confetti-edge: -10px;
+  --type-stat-strong: 800 20px/24px var(--font-display);
+  --summary-gap: 28px;
+  /* Area coach */
+  --segment-height: 40px;
+  --type-segment: 600 13px/1 var(--font-sans);
+  --textarea-min: 96px;
+  /* Fogli dal basso (fine allenamento, pubblica) */
+  --sheet-radius: 28px;
+  --sheet-bottom: max(30px, env(safe-area-inset-bottom));
+  --sheet-grab-w: 40px;
+  --sheet-grab-h: 5px;
+  --sheet-grab-radius: 3px;
+  --type-sheet-title: 800 24px/28px var(--font-display);
+  --type-sheet-lead: 500 14px/20px var(--font-sans);
+  --type-sheet-stat: 800 18px/22px var(--font-display);
+  --sheet-in: .22s;
+  /* Storico */
+  --type-chip-filter: 600 13px/1 var(--font-sans);
+  --chip-filter-h: 34px;
+  --chip-filter-pad: 14px;
+  --chip-gap: 6px;
+  --type-month: 800 18px/22px var(--font-display);
+  --cal-gap: 5px;
+  --cal-radius: 8px;
+  --type-cal: 600 11px/1 var(--font-sans);
+  --type-legend: 500 11px/14px var(--font-sans);
+  --legend-dot: 10px;
+  --legend-radius: 3px;
+  --today-ring: 2px;
+  --hrow-date: 48px;
+  --hrow-pad-y: 12px;
+  --hrow-date-pad-y: 6px;
+  --type-hrow-day: 800 18px/1 var(--font-display);
+  --type-hrow-weekday: 700 10px/1 var(--font-sans);
+  --track-hrow-weekday: .06em;
+  --type-hrow-vol: 800 15px/1 var(--font-display);
+  --type-hrow-time: 500 11px/1 var(--font-sans);
+  --trophy: 20px;
+  --trophy-icon: 12px;
+  /* Social */
+  --av: 40px;
+  --av-sm: 32px;
+  --av-lg: 72px;
+  --type-av: 800 15px/1 var(--font-display);
+  --type-av-sm: 800 13px/1 var(--font-display);
+  --type-av-lg: 800 28px/1 var(--font-display);
+  --type-post-name: 700 14px/18px var(--font-sans);
+  --type-post-title: 800 20px/24px var(--font-display);
+  --type-post-text: 400 14px/20px var(--font-sans);
+  --type-post-stat-label: 500 11px/14px var(--font-sans);
+  --type-post-stat: 800 18px/22px var(--font-display);
+  --type-chip: 700 12px/1 var(--font-sans);
+  --chip-h: 28px;
+  --chip-pad: 10px;
+  --chip-icon: 14px;
+  --post-act-h: 40px;
+  --type-post-act: 600 13px/1 var(--font-sans);
+  --type-post-comment: 400 13px/18px var(--font-sans);
+  --type-rank: 600 14px/18px var(--font-sans);
+  --type-rank-pos: 800 13px/1 var(--font-display);
+  --type-rank-value: 800 14px/1 var(--font-display);
+  --rank-pos: 20px;
+  --rank-pad-y: 6px;
+  --type-weekstrip-title: 700 14px/18px var(--font-sans);
+  --comment-radius-tail: 4px;
+  --type-comment-name: 700 13px/18px var(--font-sans);
+  --type-comment-time: 500 11px/14px var(--font-sans);
+  --type-comment: 400 14px/20px var(--font-sans);
+  --composer-bottom: max(28px, env(safe-area-inset-bottom));
+  --type-composer: 400 15px/1 var(--font-sans);
+  --type-friend-name: 800 26px/30px var(--font-display);
+  --seg-btn: 36px;
+  --bars-h: 64px;
+  --bars-gap: 6px;
+  --bars-radius: 4px;
+  --type-bars: 500 10px/1 var(--font-sans);
+  --switch-w: 48px;
+  --switch-h: 28px;
+  --switch-knob: 19px;
+  --switch-inset: 3px;
+  --switch-on: 24px;
+  --type-toggle: 600 14px/18px var(--font-sans);
+  --type-textarea: 400 15px/21px var(--font-sans);
+  --textarea-h: 72px;
+  --input-sheet: 48px;
+  --type-input-sheet: 600 15px/1 var(--font-sans);
+  --iconbtn-sm: 36px;
+  /* Recupero tra le serie */
+  --rest-bottom: max(22px, env(safe-area-inset-bottom));
+  --rest-radius: 26px;
+  --rest-ring: 96px;
+  --rest-ring-stroke: 8;
+  --type-rest-time: 800 26px/1 var(--font-display);
+  --type-rest-next: 700 16px/22px var(--font-sans);
+  --rest-btn: 48px;
+  --rest-tick: 1s;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --surface: #f5f8e6;
+    --surface-raised: #ffffff;
+    --surface-sunken: #e9efd0;
+    --line: #d6dfb8;
+    --ink: var(--forest-900);
+    --ink-muted: #4a5e3f;
+    --accent: var(--moss-500);
+    --accent-soft: #e3ecc4;
+    --on-accent-soft: var(--forest-700);
+    --primary: var(--forest-700);
+    --on-primary: var(--lime-100);
+    --highlight: var(--forest-900);
+    --on-highlight: var(--lime-100);
+    --on-highlight-muted: #c9d39a;
+    --focus-ring: var(--forest-700);
+    --scrim: rgba(19, 42, 19, 0.45);
+    --danger: #b3261e;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --surface: #f5f8e6;
+  --surface-raised: #ffffff;
+  --surface-sunken: #e9efd0;
+  --line: #d6dfb8;
+  --ink: var(--forest-900);
+  --ink-muted: #4a5e3f;
+  --accent: var(--moss-500);
+  --accent-soft: #e3ecc4;
+  --on-accent-soft: var(--forest-700);
+  --primary: var(--forest-700);
+  --on-primary: var(--lime-100);
+  --highlight: var(--forest-900);
+  --on-highlight: var(--lime-100);
+  --on-highlight-muted: #c9d39a;
+  --focus-ring: var(--forest-700);
+  --scrim: rgba(19, 42, 19, 0.45);
+  --danger: #b3261e;
+  color-scheme: light;
+}

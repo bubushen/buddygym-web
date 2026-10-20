@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#132a13" />
+    <title>Buddy Gym · Workout</title>
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./src/theme.css" />
+    <link rel="stylesheet" href="./src/ui/components.css" />
+    <!-- App web installabile: su iPhone «Condividi › Aggiungi alla schermata Home». -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Buddy Gym" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  </head>
+  <body>
+    <main class="phone-shell" id="phoneShell">
+      <div id="timerSlot"></div>
+      <div class="app-scroll" id="appScroll">
+      <header class="app-header">
+        <div class="brand"><span class="brand-mark">B</span><span>BUDDY<span class="brand-accent">GYM</span></span></div>
+        <button type="button" class="account-toggle" id="accountButton">Account</button>
+      </header>
+      <div id="demoPreviewBar" class="demo-preview-bar" hidden><span id="demoPreviewLabel"></span><button type="button" id="exitDemoPreview">Torna al coach</button></div>
+      <section class="screen" id="accessScreen" aria-label="Scegli come accedere" hidden>
+        <div class="page-heading"><p class="eyebrow">IL TUO ACCOUNT, DUE SPAZI</p><h1>Come vuoi accedere?</h1><p>Usa lo stesso account per allenarti e per preparare le schede dei tuoi clienti.</p></div>
+        <div class="workout-list"><button type="button" class="workout-card" id="chooseClientAccess"><span class="card-icon">↗</span><strong>Cliente</strong><p>Le tue schede e i tuoi allenamenti.</p><span class="card-arrow">Entra come cliente →</span></button><button type="button" class="workout-card" id="chooseCoachAccess"><span class="card-icon">▣</span><strong>Coach</strong><p>Template, esercizi e assegnazioni.</p><span class="card-arrow">Entra come coach →</span></button></div>
+      </section>
+      <section class="screen" id="coachScreen" aria-label="Area coach" hidden></section>
+      <section class="screen" id="benchScreen" aria-label="Prova modelli" hidden></section>
+
+      <section class="screen" id="homeScreen" aria-label="Schede"></section>
+      <section class="screen" id="nutritionScreen" aria-label="Nutrizione" hidden></section>
+      <section class="screen" id="loginScreen" aria-label="Accedi" hidden></section>
+      <section class="screen" id="signupScreen" aria-label="Registrati" hidden></section>
+      <section class="screen" id="newPasswordScreen" aria-label="Nuova password" hidden></section>
+      <section class="screen" id="aliasScreen" aria-label="Scegli il tuo alias" hidden></section>
+      <section class="screen" id="historyScreen" aria-label="Storico" hidden></section>
+      <section class="screen" id="socialScreen" aria-label="Social" hidden></section>
+      <section class="screen" id="postScreen" aria-label="Post" hidden></section>
+      <section class="screen" id="friendScreen" aria-label="Profilo amico" hidden></section>
+      <section class="screen" id="friendsScreen" aria-label="Trova amici" hidden></section>
+      <section class="screen" id="leaderboardScreen" aria-label="Classifica" hidden></section>
+      <section class="screen" id="summaryScreen" aria-label="Riepilogo dell'allenamento" hidden></section>
+      <section class="screen" id="coachingLockedScreen" aria-label="Coaching" hidden></section>
+
+      <section class="screen" id="accountScreen" aria-label="Account" hidden></section>
+      <div class="account-status" id="accountStatus" role="status" hidden></div>
+
+      <section class="screen" id="workoutScreen" aria-label="Dettaglio scheda" hidden>
+        <button type="button" class="back-button" id="backToHome" aria-label="Torna alle schede"><span aria-hidden="true">←</span> Schede</button>
+        <div class="page-heading page-heading-inner">
+          <p class="eyebrow" id="workoutSource"></p>
+          <h1 id="workoutTitle"></h1>
+          <p id="workoutDescription"></p>
+        </div>
+        <div class="summary-strip" id="workoutSummary"></div>
+        <div class="section-heading"><h2>Esercizi</h2><button type="button" class="plus-button plus-button-small" id="addExerciseButton" aria-label="Aggiungi un esercizio">+</button></div>
+        <div id="exerciseList" class="exercise-list"></div>
+        <div id="emptyExercises" class="empty-list" hidden>Questa scheda è vuota. Premi + per aggiungere il primo esercizio.</div>
+        <div class="management-actions"><button type="button" class="text-action" id="editWorkoutButton">Modifica nome</button><button type="button" class="text-action danger-action" id="deleteWorkoutButton">Elimina scheda</button></div>
+      </section>
+
+<section class="screen" id="workoutFormScreen" aria-label="Crea o modifica scheda" hidden></section>
+
+<section class="screen" id="exerciseFormScreen" aria-label="Aggiungi o modifica esercizio" hidden>
+        <div id="exerciseFormTop"></div>
+        <form id="exerciseForm" novalidate>
+          <div class="bg-exhead"><p class="bg-exhead__over">Esercizio</p><h1 id="exerciseFormTitle">Nuovo esercizio</h1><p class="bg-exhead__lead">Scegli se programmare serie e ripetizioni o un tempo.</p></div>
+          <div class="bg-fgroup"><label class="bg-flabel" for="exerciseNameInput">Nome esercizio</label><input id="exerciseNameInput" class="bg-input" name="name" type="text" maxlength="60" placeholder="Es. Bike o Leg press" list="exerciseSuggestions" autocomplete="off" required /></div>
+          <datalist id="exerciseSuggestions"><option value="Bike"></option><option value="Leg press"></option><option value="Curl con manubrio"></option></datalist>
+          <fieldset class="bg-fgroup bg-fieldset"><legend class="bg-flabel">Come vuoi programmarlo?</legend>
+            <div class="bg-choice">
+              <label class="bg-choice__opt"><input type="radio" name="mode" value="reps" checked /><span class="bg-choice__dot" aria-hidden="true"></span><span>Serie e ripetizioni<small>Per pesi e corpo libero</small></span></label>
+              <label class="bg-choice__opt"><input type="radio" name="mode" value="time" /><span class="bg-choice__dot" aria-hidden="true"></span><span>Tempo<small>Per cardio, plank, stretching</small></span></label>
+            </div>
+          </fieldset>
+          <div class="bg-fgroup" id="repsFields"><div class="bg-pair2"><div><label class="bg-flabel" for="exerciseSetsInput">Numero di serie</label><div class="bg-stepper"><input id="exerciseSetsInput" type="number" inputmode="numeric" min="1" max="999" value="3" /><span class="bg-stepper__btns"><button type="button" data-step="1" data-for="exerciseSetsInput" aria-label="Aumenta numero di serie"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg></button><button type="button" data-step="-1" data-for="exerciseSetsInput" aria-label="Diminuisci numero di serie"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button></span></div></div><div><label class="bg-flabel" for="exerciseRepsInput">Ripetizioni per serie</label><div class="bg-stepper"><input id="exerciseRepsInput" type="number" inputmode="numeric" min="1" max="999" value="8" /><span class="bg-stepper__btns"><button type="button" data-step="1" data-for="exerciseRepsInput" aria-label="Aumenta ripetizioni per serie"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg></button><button type="button" data-step="-1" data-for="exerciseRepsInput" aria-label="Diminuisci ripetizioni per serie"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button></span></div></div></div></div>
+          <div class="bg-fgroup" id="timeFields" hidden><div class="bg-pair2"><div><label class="bg-flabel" for="exerciseMinutesInput">Durata</label><div class="bg-stepper"><input id="exerciseMinutesInput" type="number" inputmode="decimal" min="0.5" max="999" step="0.5" value="10" /><span class="bg-stepper__unit">min</span><span class="bg-stepper__btns"><button type="button" data-step="1" data-for="exerciseMinutesInput" aria-label="Aumenta durata"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg></button><button type="button" data-step="-1" data-for="exerciseMinutesInput" aria-label="Diminuisci durata"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button></span></div></div><div><label class="bg-flabel" for="exerciseTimeSetsInput">Serie</label><div class="bg-stepper"><input id="exerciseTimeSetsInput" type="number" inputmode="numeric" min="1" max="999" value="1" /><span class="bg-stepper__btns"><button type="button" data-step="1" data-for="exerciseTimeSetsInput" aria-label="Aumenta serie"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg></button><button type="button" data-step="-1" data-for="exerciseTimeSetsInput" aria-label="Diminuisci serie"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button></span></div></div></div></div>
+          <div class="bg-fgroup"><label class="bg-flabel" for="exerciseRestInput">Recupero tra le serie</label><div class="bg-stepper"><input id="exerciseRestInput" type="number" inputmode="numeric" min="15" max="600" step="15" value="90" aria-label="Recupero tra le serie in secondi" /><span class="bg-stepper__unit">sec</span><span class="bg-stepper__btns"><button type="button" data-step="1" data-for="exerciseRestInput" aria-label="Aumenta di 15 secondi"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5"/></svg></button><button type="button" data-step="-1" data-for="exerciseRestInput" aria-label="Diminuisci di 15 secondi"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button></span></div></div>
+          <section class="bg-upload">
+            <h3>Video di riferimento personale<small>facoltativo</small></h3>
+            <p>Carica una breve ripresa dell’esercizio, verticale o orizzontale. Verrà analizzata una volta e usata per confrontare i tuoi video futuri. Non verifica se la tecnica iniziale è corretta.</p>
+            <label class="bg-upload__btn" for="personalReferenceInput"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Scegli video di riferimento</label>
+            <input id="personalReferenceInput" type="file" accept="video/*" hidden />
+            <span class="bg-upload__state" id="personalReferenceName">Nessun video selezionato</span>
+          </section>
+          <p class="bg-note">Senza un tuo video, il confronto usa il riferimento BuddyGym quando esiste per quell'esercizio.</p>
+          <p class="bg-formstatus" id="referenceProgress" aria-live="polite" hidden></p>
+          <p class="bg-formstatus bg-formstatus--error" id="exerciseFormError" role="alert" hidden></p>
+          <div class="bg-exspacer bg-exspacer--form" aria-hidden="true"></div>
+        </form>
+      </section>
+
+      <section class="screen" id="exerciseScreen" aria-label="Dettaglio esercizio" hidden>
+        <div id="exerciseTop"></div>
+        <div class="bg-exhead">
+          <p class="bg-exhead__over" id="exerciseIndex">Esercizio</p>
+          <h1 id="exerciseTitle"></h1>
+          <p class="bg-exhead__sub" id="exerciseSubtitle"></p>
+        </div>
+
+        <section class="bg-reference" id="referenceSection" aria-label="Video di riferimento">
+          <div class="bg-video bg-video--media"><video id="referenceVideo" playsinline controls muted preload="metadata" poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" aria-label="Video di riferimento"></video><canvas id="referenceOverlay" aria-hidden="true" hidden></canvas></div>
+          <p class="bg-reference__label"><span id="referenceLabel">Esecuzione corretta</span> · <span id="referenceBadge">video fisso</span></p>
+          <p class="bg-note" id="referencePoseStatus" role="status" hidden></p>
+          <p class="bg-note" id="referenceCaption">Guarda il movimento indicato nella scheda prima di iniziare.</p>
+        </section>
+        <div class="bg-video bg-video--placeholder" role="img" aria-label="Video di riferimento non disponibile"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Video</div>
+
+        <section class="bg-target" aria-label="Obiettivo dell'esercizio">
+          <div id="targetSetsBlock"><b id="targetSets">—</b><span>serie</span></div>
+          <i id="targetCross" aria-hidden="true">×</i>
+          <div><b id="targetReps">—</b><span id="targetUnit">ripetizioni</span></div>
+        </section>
+
+        <section class="bg-notecard" id="curlInstructions" aria-label="Indicazioni per il curl">
+          <h2>Come eseguirlo</h2>
+          <ul>
+            <li>Tieni il busto stabile, in piedi o seduto.</li>
+            <li>Mantieni il gomito vicino alla verticale della spalla, senza farlo avanzare.</li>
+            <li>Piega il braccio fino alla posizione alta e torna alla partenza.</li>
+          </ul>
+        </section>
+        <section class="bg-notecard" id="coachInstructions" hidden><h2>Indicazioni del coach</h2><ul id="coachInstructionList"></ul></section>
+
+        <section aria-label="Storico dell'esercizio">
+          <div class="bg-blocktitle"><h2>Scorsa volta</h2><span id="previousWorkoutDate"></span></div>
+          <div id="previousWorkoutRows"></div>
+          <div class="bg-progress">
+            <button type="button" id="toggleProgressButton" class="bg-link" aria-expanded="false" hidden>Mostra andamento</button>
+            <div id="progressPanel" class="bg-chart bg-progress__panel" hidden>
+              <p class="bg-chart__head" id="progressDescription"></p>
+              <div id="progressChart" class="bg-progress__chart"></div>
+              <p class="bg-chart__empty" id="progressTrend"></p>
+            </div>
+          </div>
+        </section>
+
+        <section aria-label="Serie svolte">
+          <div class="bg-blocktitle"><h2 id="logHeading">Le tue serie</h2><span>oggi</span></div>
+          <div id="setRows" class="bg-sets"></div>
+          <div class="bg-addset" id="addSetSlot"></div>
+          <p class="bg-note" id="saveNote" aria-live="polite"></p>
+        </section>
+
+        <button type="button" class="bg-analyze" id="openAnalysisButton" aria-expanded="false" aria-controls="analysisPanel"><span class="bg-analyze__ic"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg></span><span><b>Carica e analizza il tuo video</b><small>Analisi della tecnica e tracking della posizione</small></span></button>
+        <div class="bg-analysis" id="analysisPanel" hidden>
+          <section class="bg-analysis__block" id="analysisSection" aria-label="Analisi della tua esecuzione">
+            <p class="bg-note" id="analysisDescription">Registra il tuo curl di lato, in verticale o in orizzontale, poi carica il video per ricevere un riscontro.</p>
+            <div class="bg-analysis__upload">
+              <label class="bg-btn bg-btn--outline bg-btn--block" for="videoInput"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Scegli il video della tua esecuzione</label>
+              <input id="videoInput" type="file" accept="video/*" hidden />
+              <span class="bg-note" id="videoName">Nessun video selezionato</span>
+            </div>
+            <div class="bg-video bg-video--stage" id="videoStage">
+              <div class="bg-video__empty" id="emptyStage"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><strong>Il tuo video apparirà qui</strong><span>Ripresa laterale · verticale o orizzontale</span></div>
+              <video id="video" playsinline muted preload="metadata" poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" hidden></video>
+              <canvas id="overlay" aria-hidden="true" hidden></canvas>
+            </div>
+            <button id="analyzeButton" class="bg-btn bg-btn--primary bg-btn--block" disabled>Analizza la mia esecuzione</button>
+            <p class="bg-note">L’analisi avviene sul dispositivo. Il video della tua esecuzione non viene salvato né inviato a nessun server: resta solo finché l’esercizio è aperto.</p>
+          </section>
+          <section class="bg-analysis__block bg-result" id="resultSection" aria-live="polite" aria-label="Risultato dell'analisi">
+            <div class="bg-blocktitle bg-blocktitle--inner"><h2>Risultato</h2><span id="resultBadge">Tecnica</span></div>
+            <p id="status" class="bg-result__status">Carica il tuo video per iniziare.</p>
+            <div id="feedback" class="bg-result__list" hidden></div>
+            <p class="bg-note" id="analysisLimits">Controlliamo ampiezza del curl, gomito e busto. Questo giudizio è sperimentale e non certifica la correttezza dell’esecuzione.</p>
+          </section>
+          <p class="bg-note bg-analysis__generic" id="genericVideoNote" hidden>Per confrontare questo esercizio con le tue esecuzioni, aggiungi un video personale da “Modifica esercizio”. Il confronto misura la somiglianza, non la correttezza tecnica.</p>
+        </div>
+        <div class="bg-workout-actions"><button type="button" class="bg-link" id="editExerciseButton">Modifica esercizio</button><button type="button" class="bg-link bg-link--danger" id="deleteExerciseButton">Elimina esercizio</button></div>
+        <div class="bg-exspacer" aria-hidden="true"></div>
+      </section>
+      </div>
+<nav class="bg-exnav" id="exerciseNav" aria-label="Cambia esercizio" hidden></nav>
+      <div class="bg-rest" id="restPanel" role="timer" aria-label="Recupero tra le serie" aria-live="off" hidden></div>
+      <div id="dockSlot"></div>
+      <div id="tabBarSlot"></div>
+      <div id="sheetSlot"></div>
+      <div id="toastSlot" aria-live="polite"></div>
+    </main>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
