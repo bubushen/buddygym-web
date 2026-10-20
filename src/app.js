@@ -13,7 +13,7 @@ import { endWorkoutCheck, plannedSets, restSecondsOf, rowDone, shortDate } from 
 import { accountStorage, createCloudClient, deleteAccount, downloadAccount, signInWithProvider, uploadAccount } from './cloud-account.js';
 import { authCallbackParameters, authRedirectUrl, isAuthCallback, isNativeApp, nativePlugin } from './native-app.js';
 import { createLocalBackup, importLocalBackup } from './local-backup.js';
-import { aliasAvailable, loadProfile, saveAlias, saveBirthDate, saveMode as saveProfileMode, savePrivacy } from './profile.js';
+import { aliasAvailable, loadProfile, saveAlias, saveBirthDate, saveMode as saveProfileMode, savePrivacy, saveProfile } from './profile.js';
 import { MODE_KEY, applyMode, currentMode, isPilates, readMode, saveMode } from './mode.js';
 import { modePicker, renderWelcome } from './screens/mode.js';
 import { renderPilatesBlock, renderPilatesExerciseForm, renderPilatesSummary } from './screens/pilates.js';
@@ -38,7 +38,7 @@ import { canCompressVideo, compressVideo } from './video-compress.js';
 import { keepFrameFitted } from './video-frame.js';
 import { renderHome as renderHomeScreen } from './screens/home.js';
 import { renderLogin } from './screens/login.js';
-import { renderAliasPrompt, renderSignup } from './screens/signup.js';
+import { renderAliasPrompt, renderSignup, resetSignup } from './screens/signup.js';
 import { renderNewPassword } from './screens/new-password.js';
 import { signInError } from './account-rules.js';
 import { el, emptyState, openSheet, pageHead, tabBar, timerBar, topBar, button as uiButton } from './ui/components.js';
@@ -88,28 +88,21 @@ migrateLegacyCurlLogs(storage);
 let workouts = loadWorkouts(storage);
 let activeWorkout = loadActiveWorkout(storage, workouts);
 
-// Modalità: al primo avvio la sceglie WelcomeSplitScreen; chi usava già l'app resta in Palestra.
-// La scelta fatta prima della registrazione resta «in attesa» e va nel profilo al primo accesso.
+// Modalità: la sceglie WelcomeSplitScreen, che vede chiunque non abbia fatto l'accesso;
+// chi usava già l'app resta in Palestra. La scelta fatta prima della registrazione resta
+// «in attesa» e va nel profilo al primo accesso.
 const MODE_PENDING_KEY = 'buddygym:mode-pending';
-let needsWelcome = false;
-(() => {
-  const saved = readMode(deviceStorage);
-  if (saved) { applyMode(saved); return; }
-  let used = false;
+applyMode(readMode(deviceStorage) ?? 'gym');
+// Sessione salvata dall'account (anche prima che Supabase risponda): niente lampo del benvenuto.
+function hasStoredSession() {
   try {
     for (let index = 0; index < (deviceStorage?.length ?? 0); index += 1) {
-      const key = deviceStorage.key(index);
-      if (key?.startsWith('buddygym:') || key?.startsWith('sb-')) { used = true; break; }
+      if (/^sb-.*-auth-token$/.test(deviceStorage.key(index) ?? '')) return true;
     }
-  } catch { /* Senza archivio si parte dalla scelta. */ }
-  if (used) {
-    try { deviceStorage.setItem(MODE_KEY, 'gym'); } catch { /* Vale per questa apertura. */ }
-    applyMode('gym');
-  } else {
-    needsWelcome = true;
-    applyMode('gym');
-  }
-})();
+  } catch { /* Senza archivio non c'è sessione. */ }
+  return false;
+}
+const loggedOut = () => !cloudUser && !hasStoredSession();
 // Schede o sequenze della modalità attiva: Palestra e Pilates non si mescolano.
 const inMode = (workout) => (workout?.mode === 'pilates') === isPilates();
 const modeWorkouts = () => workouts.filter(inMode);
@@ -136,6 +129,37 @@ async function changeMode(mode) {
     socialState.loaded = false;
   }
   renderRoute();
+}
+
+// Sesso, data di nascita, peso e altezza dalle prime pagine della registrazione: restano sul
+// telefono finché l'account non è pronto (conferma via email o ritorno da Google), poi
+// vanno nel profilo e nei dati corporei, senza sovrascrivere quelli già presenti.
+const SIGNUP_PROFILE_KEY = 'buddygym:signup-profile';
+function rememberSignupProfile(profile) {
+  try { deviceStorage.setItem(SIGNUP_PROFILE_KEY, JSON.stringify(profile)); } catch { /* Si potranno inserire in Account. */ }
+}
+async function applySignupProfile(userId) {
+  let pending = null;
+  try { pending = JSON.parse(deviceStorage.getItem(SIGNUP_PROFILE_KEY) || 'null'); } catch { /* Niente da salvare. */ }
+  if (!pending) return;
+  try {
+    const update = {};
+    if (pending.sex && !currentProfile?.sex) update.sex = pending.sex;
+    if (pending.birthDate && !currentProfile?.birth_date) update.birth_date = pending.birthDate;
+    if (Object.keys(update).length) {
+      await saveProfile(cloudClient, userId, update);
+      currentProfile = { ...(currentProfile ?? {}), ...update };
+    }
+    for (const [metric, value] of [['peso', pending.weight], ['altezza', pending.height]]) {
+      if (!value || currentMeasurements?.[metric]?.length) continue;
+      const point = await addMeasurement(cloudClient, userId, metric, value);
+      currentMeasurements?.[metric]?.push(point);
+    }
+    deviceStorage.removeItem(SIGNUP_PROFILE_KEY);
+    resetSignup();
+  } catch (error) {
+    console.error('BUDDYGYM signup profile not saved', error);
+  }
 }
 
 // All'accesso: la scelta fatta prima di registrarsi va nel profilo; altrimenti vale quella del profilo.
@@ -378,6 +402,8 @@ async function loadAccountProfile(userId) {
     if (cloudUser?.id !== userId || profileOwnerId !== userId) return;
     currentProfile = profile;
     currentMeasurements = measurements;
+    await applySignupProfile(userId);
+    if (cloudUser?.id !== userId) return;
     if (syncModeWithProfile(profile)) renderRoute();
     if (!profile?.alias && !aliasPromptDismissed && !screens.home.hidden) openRoute('#/alias');
     else if (!screens.home.hidden) renderHome();
@@ -577,7 +603,7 @@ async function signInWith(provider, label) {
 }
 
 const loginHandlers = {
-  onBack: () => openRoute('#/schede'),
+  onBack: () => openRoute(cloudUser ? '#/schede' : '#/benvenuto'),
   onSignIn: async (email, password) => {
     const problem = authUnavailable();
     if (problem) return { message: problem };
@@ -621,13 +647,14 @@ const checkAlias = (alias) => (cloudClient ? aliasAvailable(cloudClient, alias) 
 
 function renderSignupScreen() {
   renderSignup(screens.signup, {
-    onBack: () => openRoute('#/account'),
+    onBack: () => openRoute('#/benvenuto'),
     onLogin: () => openRoute('#/account'),
-    onGoogle: () => signInWith('google', 'Google'),
+    onGoogle: (profile) => { rememberSignupProfile(profile); return signInWith('google', 'Google'); },
     checkAlias,
-    onCreate: async ({ alias, email, birthDate, password }) => {
+    onCreate: async ({ alias, email, birthDate, password, sex, weight, height }) => {
       const problem = authUnavailable();
       if (problem) return { message: problem };
+      rememberSignupProfile({ sex, birthDate, weight, height });
       const { data, error } = await cloudClient.auth.signUp({
         email, password,
         options: { emailRedirectTo: authRedirectUrl(), data: { alias, birth_date: birthDate, mode: currentMode() } },
@@ -683,7 +710,11 @@ async function signOut() {
   await syncCloud();
   await disablePush(cloudClient);
   const { error } = await cloudClient.auth.signOut();
-  if (!error) { try { sessionStorage.removeItem('buddygym:access-mode'); sessionStorage.removeItem('buddygym:login-mode'); } catch { /* Sessione già chiusa. */ } }
+  if (!error) {
+    try { sessionStorage.removeItem('buddygym:access-mode'); sessionStorage.removeItem('buddygym:login-mode'); } catch { /* Sessione già chiusa. */ }
+    // Fuori dall'account si torna alla scelta Palestra / Pilates.
+    openRoute('#/benvenuto');
+  }
   if (error) accountMessage(`Uscita non riuscita: ${error.message}`);
 }
 function removeLocalAccountData(userId) {
@@ -2501,11 +2532,12 @@ function renderRoute() {
   const workout = workouts.find((item) => item.id === parts[2]);
   const exercise = workout?.exercises.find((item) => item.id === parts[3]);
   let screen = 'home';
-  if (needsWelcome && !['registrati', 'account', 'nuova-password'].includes(parts[1])) {
+  // Senza accesso si parte sempre dalla scelta Palestra / Pilates.
+  if (loggedOut() && !['registrati', 'account', 'nuova-password', 'invito'].includes(parts[1])) {
     screen = 'welcome';
     renderWelcome(screens.welcome, {
-      onChoose: (mode) => { needsWelcome = false; chooseMode(mode, { pending: true }); openRoute('#/registrati'); },
-      onLogin: () => { needsWelcome = false; chooseMode(currentMode()); openRoute('#/account'); },
+      onChoose: (mode) => { chooseMode(mode, { pending: true }); resetSignup(); openRoute('#/registrati'); },
+      onLogin: () => { chooseMode(currentMode()); openRoute('#/account'); },
     });
   } else if (parts[1] === 'prova-modelli') {
     screen = 'bench';

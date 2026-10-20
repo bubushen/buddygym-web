@@ -687,3 +687,7 @@ button.bg-rank { cursor: pointer; }
 .bg-flabel small { margin-left: var(--space-1); font: var(--type-caption); color: var(--ink-muted); }
 .bg-target[hidden] { display: none; }
 .bg-post__stats--one { grid-template-columns: minmax(0, 1fr); }
+/* Registrazione in tre pagine: «Passo 1 di 3» e scelta del sesso. */
+.bg-pagehead p.bg-pagehead__over { margin: 0 0 var(--space-1); font: var(--type-overline); letter-spacing: var(--track-overline); text-transform: uppercase; color: var(--accent); }
+.bg-field .bg-chips--wrap { margin-top: var(--space-1); }
+.bg-field [role="alert"]:not([hidden]) { color: var(--danger); display: flex; align-items: center; gap: var(--space-1); }
