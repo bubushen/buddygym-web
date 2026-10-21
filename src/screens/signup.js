@@ -1,4 +1,5 @@
-// SignupScreen: alias, email, data di nascita, password e conferma, oppure Google.
+// SignupScreen: alias, email, data di nascita, password e conferma. «Registrati con Google»
+// è al passo 2, sotto il campo email: l'alias già scritto (se valido) si salva dopo l'accesso.
 import { button, el, link, pageHead, textField, topBar } from '../ui/components.js';
 import { aliasProblem, birthDateProblem, passwordProblem } from '../account-rules.js';
 import { icon } from '../ui/icons.js';
@@ -67,8 +68,6 @@ export function renderSignup(root, dock, props) {
     fields = [
       el('div', { role: 'radiogroup', 'aria-labelledby': 'signupSexLabel' }, el('span', { className: 'bg-flabel', id: 'signupSexLabel', text: 'Sesso' }), options),
       el('div', { className: 'bg-datefield' }, el('span', { className: 'bg-flabel', text: 'Data di nascita' }), date, help),
-      el('div', { className: 'bg-divider', text: 'oppure' }),
-      button({ label: 'Registrati con Google', variant: 'google', onClick: async () => { status.textContent = (await onGoogle(profileValues())) ?? ''; } }),
     ];
     ready = () => !!draft.sex && !birthDateProblem(draft.birthDate, today);
     submit = () => go(2);
@@ -86,7 +85,12 @@ export function renderSignup(root, dock, props) {
       alias.setError(problem ?? ((await checkAlias(value)) === false ? 'Questo alias è già preso: scegline un altro.' : ''));
     });
     email.input.addEventListener('blur', () => { email.setError(email.input.value.trim() && !validEmail() ? 'Scrivi un indirizzo email valido.' : ''); });
-    fields = [alias, email];
+    fields = [
+      alias,
+      email,
+      el('div', { className: 'bg-divider', text: 'oppure' }),
+      button({ label: 'Registrati con Google', variant: 'google', onClick: async () => { status.textContent = (await onGoogle(googleSignupValues(draft, draft.alias))) ?? ''; } }),
+    ];
     submit = async () => {
       if ((await checkAlias(draft.alias)) === false) { alias.setError('Questo alias è già preso: scegline un altro.'); alias.input.focus(); return; }
       go(3);
@@ -102,7 +106,7 @@ export function renderSignup(root, dock, props) {
     });
     fields = [password, confirm];
     submit = async () => {
-      const result = await onCreate({ ...profileValues(), alias: draft.alias, email: draft.email, password: password.input.value });
+      const result = await onCreate({ sex: draft.sex, birthDate: draft.birthDate, alias: draft.alias, email: draft.email, password: password.input.value });
       // Alias o email rifiutati dal server: si torna al passo 2 con il messaggio.
       if (result?.field === 'alias' || result?.field === 'email') { go(2); root.querySelector('.bg-formstatus').textContent = result.message; return; }
       if (result?.message) status.textContent = result.message;
@@ -130,9 +134,10 @@ export function renderSignup(root, dock, props) {
   setReady(ready());
 }
 
-// Sesso e data di nascita: si salvano nel profilo al primo accesso.
-function profileValues() {
-  return { sex: draft.sex, birthDate: draft.birthDate };
+// Valori da passare a Google: sesso, data di nascita e, se valido, l'alias già scritto al passo 2.
+export function googleSignupValues(draft, aliasText) {
+  const alias = String(aliasText ?? '').trim();
+  return { sex: draft.sex, birthDate: draft.birthDate, alias: aliasProblem(alias) === null ? alias : '' };
 }
 
 // Alias da scegliere dopo la registrazione con Google (o per account già esistenti).

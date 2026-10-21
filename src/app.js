@@ -158,6 +158,14 @@ async function applySignupProfile(userId) {
       await saveProfile(cloudClient, userId, update);
       currentProfile = { ...(currentProfile ?? {}), ...update };
     }
+    if (pending.alias && !currentProfile?.alias) {
+      try {
+        await saveAlias(cloudClient, userId, pending.alias);
+        currentProfile = { ...currentProfile, alias: pending.alias };
+      } catch (error) {
+        console.error('BUDDYGYM signup alias not saved', error);
+      }
+    }
     for (const [metric, value] of [['peso', pending.weight], ['altezza', pending.height]]) {
       if (!value || currentMeasurements?.[metric]?.length) continue;
       const point = await addMeasurement(cloudClient, userId, metric, value);
@@ -419,7 +427,7 @@ async function loadAccountProfile(userId) {
     if (cloudUser?.id !== userId) return;
     applyProfileSettings(profile);
     if (syncModeWithProfile(profile)) renderRoute();
-    if (!profile?.alias && !aliasPromptDismissed && !screens.home.hidden) openRoute('#/alias');
+    if (!currentProfile?.alias && !aliasPromptDismissed && !screens.home.hidden) openRoute('#/alias');
     else if (!screens.home.hidden) renderHome();
     renderAccount();
   } catch (error) {
