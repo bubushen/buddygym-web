@@ -833,3 +833,11 @@ button.bg-rank { cursor: pointer; }
 .bg-dayempty { margin: 0 var(--space-4) var(--space-5); padding: var(--space-5); border-radius: var(--radius-lg); border: var(--border-thin) dashed var(--line); text-align: center; font: var(--type-dayempty); color: var(--ink-muted); }
 .bg-dayempty b { display: block; margin-bottom: var(--space-1); font: var(--type-dayempty-title); color: var(--ink); }
 .bg-focuslist .bg-dcard { transform-origin: 50% 50%; will-change: transform, opacity; }
+
+/* Massimale a tendina: la testata apre e chiude la sezione. */
+.bg-pbtoggle { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; align-items: center; }
+.bg-pbtoggle:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.bg-pbtoggle__sum { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-pb-date); color: var(--ink-muted); }
+.bg-pbtoggle__chev { transition: transform var(--dur-base) var(--ease-out); }
+.bg-pbtoggle[aria-expanded="true"] .bg-pbtoggle__chev { transform: rotate(180deg); }
+.bg-pbtoggle[aria-expanded="true"] + .bg-pb { animation: bg-fade-in var(--dur-base) var(--ease-out) both; }

@@ -2140,6 +2140,7 @@ function renderHistory(workout, exercise) {
 
 // Massimale (PersonalBest): massimale attuale, record dal più recente e punto di partenza,
 // contando lo stesso esercizio in tutte le schede (stesso nome).
+const openRecords = new Set();
 function renderRecords(exercise) {
   const section = document.querySelector('#recordsSection');
   section.hidden = exercise.mode !== 'reps';
@@ -2149,9 +2150,15 @@ function renderRecords(exercise) {
   const day = (time) => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(time);
   const key = exerciseKey(exercise.title);
   const shared = workouts.filter((item) => item.mode !== 'pilates' && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === key)).length > 1;
-  const title = el('div', { className: 'bg-blocktitle' }, el('h2', { text: 'Massimale' }));
+  // A tendina: chiusa di default, si apre a richiesta (resta aperta per quell'esercizio).
+  const open = openRecords.has(key);
+  const title = el('button', { type: 'button', className: 'bg-blocktitle bg-pbtoggle', 'aria-expanded': String(open), 'aria-controls': 'recordsPanel',
+    onClick: () => { if (open) openRecords.delete(key); else openRecords.add(key); renderRecords(exercise); } },
+    el('h2', { text: 'Massimale' }),
+    el('span', { className: 'bg-pbtoggle__sum' }, top ? liftText(top.load, top.reps) : 'nessun dato', icon('chevronDown', { small: true, className: 'bg-pbtoggle__chev' })));
+  if (!open) { section.replaceChildren(title); return; }
   if (!start) {
-    section.replaceChildren(title, el('section', { className: 'bg-pb', 'aria-label': 'Massimale' },
+    section.replaceChildren(title, el('section', { className: 'bg-pb', id: 'recordsPanel', 'aria-label': 'Massimale' },
       el('div', { className: 'bg-pb__empty' }, icon('flag', { small: true }),
         el('span', {}, 'Non hai ancora allenamenti con questo esercizio. Il primo sarà il tuo ', el('b', { text: 'punto di partenza' }), ': i record si contano da lì.'))));
     return;
@@ -2160,7 +2167,7 @@ function renderRecords(exercise) {
     el('span', { className: 'bg-pb__date', text: date }),
     el('span', { className: 'bg-pb__what' }, el('span', { text: kind }), el('b', { text: value })),
     el('span', { className: 'bg-pb__delta' }, delta));
-  section.replaceChildren(title, el('section', { className: 'bg-pb', 'aria-label': 'Massimale' },
+  section.replaceChildren(title, el('section', { className: 'bg-pb', id: 'recordsPanel', 'aria-label': 'Massimale' },
     el('div', { className: 'bg-pb__now' },
       el('span', { className: 'bg-pb__ic' }, icon('trophy')),
       el('span', {},
