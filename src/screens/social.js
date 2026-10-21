@@ -225,7 +225,7 @@ function pilatesFriendStats(stats, weeks, top) {
   ];
 }
 
-export function renderFriendProfile(root, { friend, stats, period, posts, names, onBack, onPeriod, onFriendship, onMenu, onPost, onStrength }) {
+export function renderFriendProfile(root, { friend, stats, period, posts, names, onBack, onPeriod, onMode, onFriendship, onMenu, onPost, onStrength }) {
   const since = stats?.since ? `amici da ${new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(new Date(stats.since))}` : '';
   const hidden = !stats || stats.hidden;
   const weeks = stats?.weeks ?? [];
@@ -247,6 +247,11 @@ export function renderFriendProfile(root, { friend, stats, period, posts, names,
       hidden
         ? el('p', { className: 'bg-empty bg-empty--inset', text: friend.kind === 'friend' ? `${friend.alias} non condivide le statistiche.` : 'Le statistiche sono visibili solo agli amici.' })
         : [
+          // Amico che fa entrambe: selettore Palestra | Pilates (si apre su quella più usata).
+          (stats.modes ?? []).length > 1 && onMode ? el('div', { className: 'bg-modeseg bg-modeseg--friend', role: 'radiogroup', 'aria-label': 'Modalità' },
+            [['gym', 'Palestra'], ['pilates', 'Pilates']].map(([value, label]) => el('button', {
+              type: 'button', role: 'radio', 'aria-checked': String(stats.mode === value), onClick: () => { if (stats.mode !== value) onMode(value); },
+            }, label))) : null,
           el('div', { className: 'bg-seg', role: 'tablist' }, [['week', 'Settimana'], ['month', 'Mese'], ['year', 'Anno']].map(([id, label]) => el('button', {
             type: 'button', role: 'tab', 'aria-selected': String(period === id), onClick: () => onPeriod(id), text: label,
           }))),

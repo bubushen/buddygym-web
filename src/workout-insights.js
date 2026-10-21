@@ -55,7 +55,7 @@ export function targetLabel(exercise) {
   return `${exercise.sets} × ${exercise.reps}`;
 }
 
-const formatNumber = (value) => value.toLocaleString('it-IT', { maximumFractionDigits: 1 });
+const formatNumber = (value) => value.toLocaleString('it-IT', { maximumFractionDigits: 2 });
 
 // «Scorsa volta: 100 kg»: il carico più alto (o i minuti) dell'ultima seduta salvata.
 export function lastTimeLabel(exercise, history) {

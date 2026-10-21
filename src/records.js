@@ -106,3 +106,29 @@ export function usedExerciseNames(workouts, { pilates = false, extra = [] } = {}
   }
   return [...names.values()].sort((a, b) => a.localeCompare(b, 'it'));
 }
+
+// ——— Suggerimento di progressione (ProgressionSuggestion) ————————————————————————
+// Dall'ultima volta con l'esercizio (storico unico per nome):
+// - tutte le serie a obiettivo → +5% del carico, arrotondato a 0,25 kg;
+// - almeno una serie sotto → stesso carico, «punta a N su tutte»;
+// - sotto anche la volta prima → «Resta a X kg», consolidare.
+// Niente alla prima volta, né per esercizi a tempo.
+export const roundQuarter = (value) => Math.round(value / 0.25) * 0.25;
+
+export function progressionSuggestion(entries, exercise) {
+  if (exercise?.mode !== 'reps') return null;
+  const sessions = entries.map((entry) => liftedRows(entry.rows)).filter((rows) => rows.length);
+  const last = sessions.at(-1);
+  if (!last) return null;
+  const target = exercise.reps;
+  const sets = Math.max(exercise.sets ?? last.length, 1);
+  const load = Math.max(...last.map((row) => row.load));
+  const below = (rows) => rows.some((row) => row.reps < target) || rows.length < sets;
+  if (!below(last)) {
+    if (load === 0) return null;
+    return { kind: 'load', load: roundQuarter(load * 1.05), reps: target, previous: { load, sets: last.length, reps: target } };
+  }
+  const short = last.findIndex((row) => row.reps < target);
+  if (sessions.length >= 2 && below(sessions.at(-2))) return { kind: 'keep', load, reps: target };
+  return { kind: 'reps', load, reps: target, sets, stopped: short >= 0 ? { set: short + 1, reps: last[short].reps } : null };
+}

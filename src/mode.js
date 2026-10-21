@@ -18,6 +18,16 @@ export function readMode(storage) {
   } catch { return null; }
 }
 
+// Aspetto (Impostazioni): chiaro, scuro o come il telefono. Vale per entrambe le modalità.
+export const THEME_KEY = 'buddygym:theme';
+let appearance = (() => { try { return localStorage.getItem(THEME_KEY) || 'system'; } catch { return 'system'; } })();
+const isDark = () => (appearance === 'dark' ? true : appearance === 'light' ? false : (darkQuery ? darkQuery.matches : true));
+export function setAppearance(value) {
+  appearance = ['light', 'dark'].includes(value) ? value : 'system';
+  try { localStorage.setItem(THEME_KEY, appearance); } catch { /* Vale per questa apertura. */ }
+  applyMode(current, { fade: true });
+}
+
 let current = null;
 export const currentMode = () => current ?? 'gym';
 export const isPilates = () => current === 'pilates';
@@ -27,7 +37,7 @@ export const isPilates = () => current === 'pilates';
 export function applyMode(mode, { fade = false, origin = null } = {}) {
   current = MODES.includes(mode) ? mode : null;
   const root = document.documentElement;
-  const theme = themeFor(currentMode(), darkQuery ? darkQuery.matches : true);
+  const theme = themeFor(currentMode(), isDark());
   if (root.dataset.theme === theme) return;
   if (origin) {
     root.style.setProperty('--reveal-x', `${Math.round(origin.x)}px`);

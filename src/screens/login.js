@@ -2,7 +2,7 @@
 // Accedi è l'unica azione primaria; Google e Registrati sono più deboli.
 import { button, el, link, pageHead, textField, topBar } from '../ui/components.js';
 
-export function renderLogin(root, { onBack, onSignIn, onGoogle, onApple, onForgot, onSignup }) {
+export function renderLogin(root, { onBack, onSignIn, onGoogle, onApple, onForgotOpen, onSignup }) {
   const email = textField({ id: 'loginEmail', label: 'Email', type: 'email', icon: 'mail', placeholder: 'nome@email.com', autocomplete: 'email', inputmode: 'email', required: true });
   const password = textField({ id: 'loginPassword', label: 'Password', type: 'password', icon: 'lock', placeholder: 'La tua password', autocomplete: 'current-password', required: true });
   const status = el('p', { className: 'bg-formstatus', role: 'status' });
@@ -14,12 +14,8 @@ export function renderLogin(root, { onBack, onSignIn, onGoogle, onApple, onForgo
   const form = el('form', { className: 'bg-form', noValidate: true },
     email,
     password,
-    el('div', { className: 'bg-form__aside' }, link({ label: 'Password dimenticata?', onClick: async () => {
-      email.setError(''); password.setError('');
-      const value = email.input.value.trim();
-      if (!value) { email.setError('Scrivi la tua email: ti mandiamo il link per scegliere una nuova password.'); email.input.focus(); return; }
-      setStatus(await onForgot(value));
-    } })),
+    // ForgotPasswordScreen: l'email già scritta si porta nella pagina di recupero.
+    el('div', { className: 'bg-form__aside' }, link({ label: 'Password dimenticata?', onClick: () => onForgotOpen(email.input.value.trim()) })),
     submit,
     el('div', { className: 'bg-divider', text: 'oppure' }),
     button({ label: 'Continua con Google', variant: 'google', onClick: async () => setStatus(await onGoogle()) }),

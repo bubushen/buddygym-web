@@ -5,7 +5,7 @@ import { formatDuration } from '../workout-summary.js';
 import { liftText } from '../records.js';
 
 const thousands = (value) => {
-  const [whole, decimals] = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1, useGrouping: false }).format(value).split(',');
+  const [whole, decimals] = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2, useGrouping: false }).format(value).split(',');
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}${decimals ? `,${decimals}` : ''}`;
 };
 const signed = (value) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${thousands(Math.abs(value))}`;

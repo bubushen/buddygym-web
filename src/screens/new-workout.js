@@ -62,7 +62,7 @@ export function renderNewWorkout(root, dock, props) {
   const name = el('input', { id: 'workoutNameInput', className: 'bg-input', placeholder: pilates ? 'Es. Mat Flow, Core & Postura' : 'Es. Upper 1, Lower, Push', maxlength: 60, autocomplete: 'off', value: draft.title || null });
   const error = el('p', { className: 'bg-formstatus bg-formstatus--error', role: 'alert' });
   const canSave = () => !!draft.title.trim() && draft.exercises.length > 0;
-  const save = el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--primary', text: `Salva ${noun}` });
+  const save = el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--primary', text: editing ? 'Salva modifiche' : `Salva ${noun}` });
   const syncSave = () => {
     save.classList.toggle('bg-btn--disabled', !canSave());
     save.setAttribute('aria-disabled', String(!canSave()));
@@ -101,8 +101,7 @@ export function renderNewWorkout(root, dock, props) {
       count ? list : emptyState(`Nessun esercizio ancora.\nAggiungi il primo per poter salvare la ${noun}.`),
       el('button', { type: 'button', className: 'bg-addex', onClick: onAddExercise }, icon('plus', { small: true }), 'Aggiungi esercizio'),
       error,
-      editing && onDelete ? el('div', { className: 'bg-workout-actions' }, link({ label: `Elimina ${noun}`, onClick: onDelete })) : null));
-  root.querySelector('.bg-workout-actions .bg-link')?.classList.add('bg-link--danger');
+      editing && onDelete ? el('div', { className: 'bg-form' }, el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--danger', onClick: onDelete, text: `Elimina ${noun}` })) : null));
   dock.replaceChildren(el('div', { className: 'bg-dock' }, save));
   syncSave();
 }

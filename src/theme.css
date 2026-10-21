@@ -312,6 +312,22 @@
   --type-dcard-stat: 800 16px/20px var(--font-display);
   --type-dayempty: 500 14px/20px var(--font-sans);
   --type-dayempty-title: 700 15px/20px var(--font-sans);
+  /* Account: password dimenticata, impostazioni, elimina account */
+  --hero-ic: 72px;
+  --hero-ic-glyph: 34px;
+  --type-hero-title: 800 26px/30px var(--font-display);
+  --type-hero-text: 500 15px/22px var(--font-sans);
+  --hero-form-gap: 28px;
+  --srow-h: 52px;
+  --type-srow: 500 15px/20px var(--font-sans);
+  --type-srow-value: 600 13px/1 var(--font-sans);
+  --opt-border-strong: 1.5px;
+  /* Suggerimento di progressione */
+  --sugg-ic: 40px;
+  --type-sugg-title: 800 20px/24px var(--font-display);
+  --type-sugg-text: 500 13px/18px var(--font-sans);
+  --sugg-btn: 44px;
+  --type-sugg-btn: 700 14px/1 var(--font-sans);
   /* Riepilogo di fine allenamento e coriandoli */
   --badge-xl: 72px;
   --badge-xl-icon: 36px;

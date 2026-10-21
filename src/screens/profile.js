@@ -145,7 +145,7 @@ export function renderProfile(root, props) {
     : el('h1', { className: 'bg-profile__name' }, el('button', { type: 'button', className: 'bg-link bg-profile__choose', text: 'Scegli il tuo alias', onClick: onChooseAlias }));
 
   root.replaceChildren(
-    topBar({ title: 'Account', onBack }),
+    topBar({ title: 'Account', onBack, action: props.onSettings ? el('button', { type: 'button', className: 'bg-iconbtn', 'aria-label': 'Impostazioni', onClick: props.onSettings }, icon('gear')) : null }),
     el('main', {},
       el('div', { className: 'bg-profile' },
         el('div', { className: 'bg-profile__avatar', 'aria-hidden': 'true', text: (alias || email || '?').charAt(0).toLocaleUpperCase('it') }),
@@ -155,32 +155,13 @@ export function renderProfile(root, props) {
       el('div', { className: 'bg-metrics' }, ageRow, rows(0)),
       el('h2', { className: 'bg-section' }, 'Circonferenze ', el('span', { text: 'facoltative' })),
       el('div', { className: 'bg-metrics' }, rows(1)),
-      // Cosa vedono gli amici nel Social. Le misure corporee non sono mai visibili.
-      privacy ? [
-        el('h2', { className: 'bg-section', text: 'Privacy con gli amici' }),
-        el('div', { className: 'bg-metrics bg-metrics--toggles' },
-          [['shareStats', 'Mostra le statistiche', 'Allenamenti e tempo in palestra'], ['shareLoads', 'Mostra i carichi', 'Volume, kg e record']].map(([key, label, hint]) => {
-            const toggle = el('button', { type: 'button', className: 'bg-switch', role: 'switch', 'aria-checked': String(privacy[key]), 'aria-label': label });
-            toggle.addEventListener('click', async () => {
-              const value = toggle.getAttribute('aria-checked') !== 'true';
-              toggle.setAttribute('aria-checked', String(value));
-              toggle.disabled = true;
-              if (!(await onPrivacy(key, value))) toggle.setAttribute('aria-checked', String(!value));
-              toggle.disabled = false;
-            });
-            return el('div', { className: 'bg-toggle bg-toggle--row' }, el('span', {}, label, el('small', { text: hint })), toggle);
-          })),
-        el('p', { className: 'bg-section__note bg-section__note--after', text: 'Le misure corporee non sono mai visibili agli altri.' }),
-      ] : null,
       el('h2', { className: 'bg-section', text: 'Dati e sincronizzazione' }),
       el('p', { className: 'bg-section__note', role: 'status', id: 'profileStatus', text: status }),
       el('div', { className: 'bg-metrics' },
         action('Riprova sincronizzazione', onRetrySync),
         action('Esporta i dati locali', onExport),
         action('Importa un backup', () => importInput.click()),
-        canRunBench ? action('Prova modelli (versione di prova)', onBench) : null,
-        action('Elimina account', onDelete, { danger: true })),
+        canRunBench ? action('Prova modelli (versione di prova)', onBench) : null),
       importInput,
-      el('div', { className: 'bg-authfoot' }, button({ label: 'Esci', variant: 'outline', onClick: onSignOut })),
       props.version ? el('p', { className: 'bg-note bg-note--center bg-version', text: props.version }) : null));
 }

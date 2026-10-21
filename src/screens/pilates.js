@@ -22,7 +22,7 @@ export function levelBars(level) {
 }
 
 // ——— Nuovo esercizio ———————————————————————————————————————————————————————————
-export function renderPilatesExerciseForm(root, dock, { workoutTitle, exercise, referenceName, names = [], onBack, onSave }) {
+export function renderPilatesExerciseForm(root, dock, { workoutTitle, exercise, referenceName, names = [], pauseDefault = DEFAULT_PAUSE, onBack, onSave }) {
   // Nomi già usati suggeriti mentre si scrive (stesso esercizio = stesso storico).
   const suggestions = el('datalist', { id: 'pilatesNames' }, names.map((value) => el('option', { value })));
   const name = el('input', { id: 'pilatesName', className: 'bg-input', placeholder: 'Es. The Hundred, Roll Up', maxlength: 60, autocomplete: 'off', list: 'pilatesNames', value: exercise?.title ?? null });
@@ -32,7 +32,7 @@ export function renderPilatesExerciseForm(root, dock, { workoutTitle, exercise, 
     onStep: (text, direction) => clockText(Math.min(3600, Math.max(15, (parseClock(text) ?? 180) + direction * 15))),
   });
   const pause = stepper({
-    id: 'pilatesPause', label: 'Pausa dopo', unit: 'sec', value: String(exercise?.pauseSeconds ?? DEFAULT_PAUSE),
+    id: 'pilatesPause', label: 'Pausa dopo', unit: 'sec', value: String(exercise?.pauseSeconds ?? pauseDefault),
     onStep: (text, direction) => String(Math.min(600, Math.max(0, (Number(text) || 0) + direction * 5))),
   });
   let level = exercise?.level ?? 1;

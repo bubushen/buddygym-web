@@ -29,7 +29,7 @@ export function normalizeProfile(values, today = new Date().toISOString().slice(
 
 export async function loadProfile(client, userId) {
   const { data, error } = await client.from('buddy_profiles')
-    .select('first_name,last_name,birth_date,weight_kg,sex,alias,share_stats,share_loads,mode')
+    .select('first_name,last_name,birth_date,weight_kg,sex,alias,share_stats,share_loads,mode,settings')
     .eq('user_id', userId).maybeSingle();
   if (error) throw error;
   return data;

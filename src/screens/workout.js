@@ -21,7 +21,7 @@ function exerciseRow({ exercise, index, meta, state, onOpen }) {
 
 // PilatesSessionScreen: stessa struttura, con durata, attrezzo e livello al posto di
 // serie × ripetizioni; `progress` dice quali esercizi sono fatti e quale è in corso.
-export function renderWorkoutScreen(root, dock, { workout, storage, active, editable, pilatesProgress, onBack, onOpenExercise, onStart, onStop, onEdit, onAddExercise }) {
+export function renderWorkoutScreen(root, dock, { workout, storage, active, editable, pilatesProgress, onBack, onOpenExercise, onStart, onStop, onEdit, onAddExercise, onMenu }) {
   const exercises = workout.exercises;
   const pilates = workout.mode === 'pilates';
   let head;
@@ -69,7 +69,8 @@ export function renderWorkoutScreen(root, dock, { workout, storage, active, edit
     last ? el('span', { text: `Ultima volta: ${shortDate(last)}` }) : null);
 
   root.replaceChildren(
-    topBar({ title: pilates ? 'Sequenza' : 'Scheda', onBack, backLabel: pilates ? 'Torna alle sequenze' : 'Torna alle schede' }),
+    topBar({ title: pilates ? 'Sequenza' : 'Scheda', onBack, backLabel: pilates ? 'Torna alle sequenze' : 'Torna alle schede',
+      action: onMenu ? el('button', { type: 'button', className: 'bg-iconbtn', 'aria-label': `Gestisci ${noun}`, onClick: onMenu }, icon('more')) : null }),
     el('main', {},
       head,
       summary,

@@ -32,11 +32,12 @@ export function appBar({ initial, onAccount, onAdd, addLabel = 'Aggiungi scheda'
 }
 
 // Top bar delle pagine interne: indietro (o chiudi), titolo centrato.
-export function topBar({ title, onBack, backLabel = 'Indietro', backIcon = 'back' }) {
+// `action`: pulsante facoltativo a destra (es. l'ingranaggio delle Impostazioni nell'Account).
+export function topBar({ title, onBack, backLabel = 'Indietro', backIcon = 'back', action = null }) {
   return el('header', { className: 'bg-topbar' },
     el('button', { type: 'button', className: 'bg-iconbtn', 'aria-label': backLabel, onClick: onBack }, icon(backIcon)),
     el('span', { className: 'bg-topbar__title', text: title }),
-    el('span'));
+    action ?? el('span'));
 }
 
 export function pageHead({ title, subtitle }) {

@@ -9,13 +9,15 @@ import { ACTIVE_WORKOUT_KEY, formatElapsed, loadActiveWorkout } from './workout-
 import { compareMovement, profileMovement } from './generic-pose.js';
 import { deleteCachedPosesWithPrefix, deletePersonalReference, deletePersonalReferencesWithPrefix, getCachedPose, getPersonalReference, saveCachedPose, savePersonalReference } from './reference-store.js';
 import { exerciseHistoryKey, exerciseLogKey, finishWorkoutSession, migratePreviousLog, readExerciseHistory, readSetLog, sessionMetric } from './workout-history.js';
-import { endWorkoutCheck, plannedSets, restSecondsOf, rowDone, shortDate } from './workout-insights.js';
+import { averageMinutes, endWorkoutCheck, plannedSets, restSecondsOf, rowDone, shortDate, workoutSessions } from './workout-insights.js';
 import { accountStorage, createCloudClient, deleteAccount, downloadAccount, signInWithProvider, uploadAccount } from './cloud-account.js';
 import { authCallbackParameters, authRedirectUrl, isAuthCallback, isNativeApp, nativePlugin } from './native-app.js';
 import { createLocalBackup, importLocalBackup } from './local-backup.js';
 import { aliasAvailable, loadProfile, saveAlias, saveBirthDate, saveMode as saveProfileMode, savePrivacy, saveProfile } from './profile.js';
-import { MODE_KEY, applyMode, currentMode, isPilates, readMode, saveMode } from './mode.js';
+import { MODE_KEY, applyMode, currentMode, isPilates, readMode, saveMode, setAppearance } from './mode.js';
 import { modePicker, renderWelcome } from './screens/mode.js';
+import { renderDeleteAccount, renderForgotPassword, renderSettings } from './screens/account-extra.js';
+import { cleanSettings, loadSettings, saveSettingsToProfile, storeSettings } from './settings.js';
 import { renderPilatesBlock, renderPilatesExerciseForm, renderPilatesSummary } from './screens/pilates.js';
 import { addMeasurement, loadMeasurements } from './measurements.js';
 import { renderProfile } from './screens/profile.js';
@@ -29,7 +31,7 @@ import * as social from './social.js';
 import { openEndWorkoutSheet } from './screens/end-workout.js';
 import { withScreenOn } from './screen-awake.js';
 import * as pilates from './pilates.js';
-import { exerciseEntries, exerciseKey, judgeSet, liftText, recordTimeline, usedExerciseNames } from './records.js';
+import { exerciseEntries, exerciseKey, judgeSet, liftText, progressionSuggestion, recordTimeline, usedExerciseNames } from './records.js';
 import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
@@ -110,7 +112,8 @@ function hasStoredSession() {
 const loggedOut = () => !cloudUser && !hasStoredSession();
 // Schede o sequenze della modalità attiva: Palestra e Pilates non si mescolano.
 const inMode = (workout) => (workout?.mode === 'pilates') === isPilates();
-const modeWorkouts = () => workouts.filter(inMode);
+// Schede eliminate: sparite dall'app ma conservate (storico e record restano).
+const modeWorkouts = () => workouts.filter((workout) => inMode(workout) && !workout.deleted);
 const modeSessions = () => (storage ? loadSessions(storage) : []).filter((session) => sessionMode(session) === currentMode());
 
 function chooseMode(mode, { pending = false, origin = null } = {}) {
@@ -214,6 +217,9 @@ const screens = {
   exerciseForm: document.querySelector('#exerciseFormScreen'),
   exercise: document.querySelector('#exerciseScreen'),
   pilatesForm: document.querySelector('#pilatesFormScreen'),
+  forgot: document.querySelector('#forgotScreen'),
+  settings: document.querySelector('#settingsScreen'),
+  deleteAccount: document.querySelector('#deleteAccountScreen'),
 };
 const coachUI = createCoachUI(screens.coach, { onPreview: showDemoClient, prepareReference: prepareCoachReference });
 
@@ -350,6 +356,7 @@ function renderProfileScreen() {
     status: lastAccountMessage,
     canRunBench: benchAvailableHere,
     version: appVersion,
+    onSettings: () => openRoute('#/impostazioni'),
     modeSection: modePicker({ mode: currentMode(), locked: !!activeWorkout, onChange: (mode, origin) => { void changeMode(mode, origin); } }),
     privacy: currentProfile ? { shareStats: currentProfile.share_stats !== false, shareLoads: currentProfile.share_loads !== false } : null,
     onPrivacy: async (key, value) => {
@@ -408,6 +415,7 @@ async function loadAccountProfile(userId) {
     currentMeasurements = measurements;
     await applySignupProfile(userId);
     if (cloudUser?.id !== userId) return;
+    applyProfileSettings(profile);
     if (syncModeWithProfile(profile)) renderRoute();
     if (!profile?.alias && !aliasPromptDismissed && !screens.home.hidden) openRoute('#/alias');
     else if (!screens.home.hidden) renderHome();
@@ -606,6 +614,7 @@ async function signInWith(provider, label) {
   }
 }
 
+let forgotEmail = '';
 const loginHandlers = {
   onBack: () => openRoute(cloudUser ? '#/schede' : '#/benvenuto'),
   onSignIn: async (email, password) => {
@@ -627,6 +636,7 @@ const loginHandlers = {
       : error ? 'Troppe richieste. Riprova tra qualche minuto.' : 'Se l’email è registrata, ti abbiamo mandato il link per scegliere una nuova password.';
   },
   onSignup: () => openRoute('#/registrati'),
+  onForgotOpen: (email) => { forgotEmail = email; openRoute('#/password-dimenticata'); },
 };
 
 // Versione installata, in fondo ad Accesso e Profilo: nell'app nativa è data e ora della build.
@@ -734,9 +744,8 @@ function removeLocalAccountData(userId) {
 
 // Richiesto da App Store e Google Play: l'account si elimina dall'app, non solo su richiesta.
 async function deleteOwnAccount() {
-  if (!cloudUser || !cloudClient || coachUI.isBusy()) return;
-  if (!window.confirm('Eliminare definitivamente il tuo account? Schede, storico, profilo, area coach e video del coach verranno cancellati dal cloud e da questo dispositivo.')) return;
-  if (window.prompt('Per confermare scrivi ELIMINA')?.trim().toLocaleUpperCase('it') !== 'ELIMINA') { accountMessage('Eliminazione annullata.'); return; }
+  // La conferma (scrivere ELIMINA) la chiede DeleteAccountScreen.
+  if (!cloudUser || !cloudClient || coachUI.isBusy()) return 'Accedi di nuovo per eliminare l\'account.';
   const userId = cloudUser.id;
   clearTimeout(syncTimer);
   syncEnabled = false;
@@ -749,7 +758,7 @@ async function deleteOwnAccount() {
     console.error('BUDDYGYM account deletion failed', error);
     syncEnabled = true;
     accountMessage(`Eliminazione non riuscita: ${error.message || 'errore sconosciuto'}. L’account non è stato eliminato: riprova quando hai internet.`);
-    return;
+    return `Eliminazione non riuscita: ${error.message || 'errore sconosciuto'}. Riprova quando hai internet.`;
   }
   try { removeLocalAccountData(userId); } catch { /* L'account cloud è già eliminato. */ }
   await deletePersonalReferencesWithPrefix(`account:${userId}:`).catch(() => {});
@@ -759,8 +768,101 @@ async function deleteOwnAccount() {
   // L'utente non esiste più: basta dimenticare la sessione su questo dispositivo.
   await cloudClient.auth.signOut({ scope: 'local' }).catch(() => {});
   await handleAuthSession(null);
-  showLoginNotice('Account eliminato. I tuoi dati sono stati cancellati dal cloud e da questo dispositivo.');
+  // Fuori dall'account si torna al benvenuto, con l'avviso.
+  openRoute('#/benvenuto');
+  toast('Account eliminato');
+  return null;
 }
+
+// Export completo (GDPR): dati del dispositivo più quelli dell'account sul server.
+async function exportAllData() {
+  try {
+    const data = { format: 'buddygym-export', version: 1, createdAt: new Date().toISOString(), device: createLocalBackup(storage) };
+    if (cloudUser && cloudClient) {
+      const me = cloudUser.id;
+      const read = async (table, column = 'user_id') => (await cloudClient.from(table).select('*').eq(column, me)).data ?? [];
+      Object.assign(data, {
+        account: { id: me, email: cloudUser.email },
+        profile: (await read('buddy_profiles'))[0] ?? null,
+        measurements: await read('buddy_measurements'),
+        workouts: await read('buddy_workouts'),
+        exerciseHistory: await read('buddy_exercise_history'),
+        sessions: await read('buddy_sessions'),
+        posts: await read('buddy_posts'),
+        comments: await read('buddy_comments'),
+        strength: await read('buddy_post_strength'),
+        friendships: (await cloudClient.from('buddy_friendships').select('*')).data ?? [],
+      });
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `buddygym-dati-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return 'File con i tuoi dati scaricato. I video sono esclusi.';
+  } catch (error) {
+    console.error('BUDDYGYM export failed', error);
+    return 'Non riesco a preparare il file. Riprova quando hai internet.';
+  }
+}
+
+// ── Impostazioni ─────────────────────────────────────────────────────────
+let settings = loadSettings(deviceStorage);
+if (settings.theme !== 'system') setAppearance(settings.theme);
+function updateSetting(key, value) {
+  settings = cleanSettings({ ...settings, [key]: value });
+  storeSettings(deviceStorage, settings);
+  if (key === 'theme') setAppearance(value);
+  if (cloudUser && cloudClient) {
+    currentProfile = { ...(currentProfile ?? {}), settings };
+    saveSettingsToProfile(cloudClient, cloudUser.id, settings).catch((error) => {
+      console.error('BUDDYGYM settings save failed', error);
+      toast('Impostazione salvata solo su questo telefono. Riprova con internet.');
+    });
+  }
+}
+function applyProfileSettings(profile) {
+  if (!profile?.settings || !Object.keys(profile.settings).length) return;
+  settings = cleanSettings(profile.settings);
+  storeSettings(deviceStorage, settings);
+  setAppearance(settings.theme);
+}
+
+function renderSettingsScreen() {
+  renderSettings(screens.settings, {
+    settings,
+    mode: currentMode(),
+    modeLocked: !!activeWorkout,
+    privacy: currentProfile ? { shareStats: currentProfile.share_stats !== false, shareLoads: currentProfile.share_loads !== false } : null,
+    onBack: () => openRoute('#/account'),
+    onSetting: updateSetting,
+    onMode: (mode) => { void changeMode(mode).then(() => openRoute('#/impostazioni')); },
+    onPrivacy: async (key, value) => {
+      if (!cloudUser) return false;
+      const column = key === 'shareStats' ? 'share_stats' : 'share_loads';
+      try {
+        await savePrivacy(cloudClient, cloudUser.id, { [column]: value });
+        currentProfile = { ...(currentProfile ?? {}), [column]: value };
+        return true;
+      } catch (error) {
+        console.error('BUDDYGYM privacy save failed', error);
+        toast('Impostazione non salvata. Riprova quando hai internet.');
+        return false;
+      }
+    },
+    onPassword: async (password) => {
+      if (!cloudUser || !cloudClient) return 'Accedi di nuovo per cambiare la password.';
+      const { error } = await cloudClient.auth.updateUser({ password });
+      if (error) return `Password non salvata: ${error.message}`;
+      toast('Password aggiornata');
+      return null;
+    },
+    onSignOut: signOut,
+    onDelete: () => openRoute('#/elimina-account'),
+  });
+}
+
 
 async function retrySync() {
   if (!cloudUser) return;
@@ -1389,6 +1491,7 @@ function renderHome() {
   renderHomeScreen(screens.home, {
     workouts: modeWorkouts(),
     storage,
+    onManage: (workout) => workoutMenu(workout),
     pilates: isPilates(),
     streak: isPilates() ? daysInRow(modeSessions()) : 0,
     activeWorkoutId: activeWorkout?.workoutId ?? null,
@@ -1657,7 +1760,7 @@ async function renderFriendScreen(userId) {
     const names = await social.loadNames(cloudClient, [userId]).catch(() => new Map());
     const friend = { userId, alias: relation?.alias ?? names.get(userId) ?? 'Utente', kind: relation?.kind ?? 'none' };
     const [stats, feed] = await Promise.all([
-      social.loadFriendStats(cloudClient, userId, socialState.period).catch(() => null),
+      social.loadFriendStats(cloudClient, userId, socialState.period, socialState.friendMode?.userId === userId ? socialState.friendMode.mode : null).catch(() => null),
       friend.kind === 'friend' ? social.loadFeed(cloudClient, me, { userId, limit: 10 }).catch(() => ({ posts: [], names: new Map() })) : { posts: [], names: new Map() },
     ]);
     if (!window.location.hash.includes(userId)) return;
@@ -1665,6 +1768,7 @@ async function renderFriendScreen(userId) {
       friend, stats, period: socialState.period, posts: feed.posts, names: feed.names,
       onBack: () => openRoute('#/social'),
       onPeriod: (period) => { socialState.period = period; void draw(); },
+      onMode: (mode) => { socialState.friendMode = { userId, mode }; void draw(); },
       onPost: (post) => openRoute(`#/social/post/${post.id}`),
       onStrength: (post) => strengthen(post, () => draw()),
       onMenu: () => openActions('Altre azioni', [
@@ -1712,7 +1816,7 @@ async function renderFriendsScreen() {
         let found;
         try { found = await social.findByAlias(cloudClient, alias); } catch { return el('p', { text: 'Ricerca non riuscita. Controlla la connessione.' }); }
         if (!found) return el('p', { text: `Nessun utente con l'alias «${alias}».` });
-        const labels = { friends: 'Siete già amici', sent: 'Richiesta già inviata', received: 'Ti ha chiesto l\'amicizia' };
+        const labels = { friends: 'Siete già amici', sent: 'Richiesta già inviata', received: 'Ti ha chiesto l\'amicizia', closed: 'Non accetta richieste di amicizia' };
         const row = el('div', { className: 'bg-exrow bg-exlist' }, el('span', { className: 'bg-exrow__body' }, el('span', { className: 'bg-exrow__name', text: found.alias }), el('span', { className: 'bg-exrow__meta', text: labels[found.status] ?? '' })));
         if (found.status === 'none' || found.status === 'received') {
           row.append(uiButton({ label: found.status === 'received' ? 'Accetta' : 'Aggiungi', block: false, onClick: async () => {
@@ -1796,7 +1900,7 @@ const TAB_SCREENS = { home: 'schede', history: 'storico', nutrition: 'nutrizione
 // Pallino sulla voce Social: nuovi commenti o «Forza» non ancora visti.
 let socialUnread = false;
 // Schermate già passate al nuovo design: senza la vecchia intestazione.
-const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'summary', 'coach', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
+const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'forgot', 'settings', 'deleteAccount', 'summary', 'coach', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
 
 // Tab bar (MicroInteractions): la pill scivola alla nuova voce (300 ms, molla), la pagina
 // arriva in dissolvenza (150 ms), vibrazione leggera al tocco.
@@ -1832,6 +1936,7 @@ function renderWorkout(workout) {
     onStart: () => { if (startWorkout(workout)) renderWorkout(workout); },
     onStop: () => { void endWorkout(); },
     onEdit: () => openRoute(`#/modifica-scheda/${workout.id}`),
+    onMenu: canEditWorkout(workout) && !demoPreview ? () => workoutMenu(workout) : null,
     onAddExercise: () => openRoute(`#/nuovo-esercizio/${workout.id}`),
   });
 }
@@ -1864,7 +1969,7 @@ function renderWorkoutForm(workout) {
     onAddExercise: () => openRoute('#/nuovo-esercizio/bozza'),
     onOpenExercise: (exercise) => openRoute(`#/modifica-esercizio/bozza/${exercise.id}`),
     onSave: saveDraft,
-    onDelete: workout ? async () => { if (await deleteWorkout(workout.id)) discardDraft(); } : null,
+    onDelete: workout ? () => confirmDeleteWorkout(workout) : null,
   });
 }
 
@@ -1927,6 +2032,7 @@ function renderAnyExerciseForm(workout, exercise, inDraft = false) {
   renderPilatesExerciseForm(screens.pilatesForm, document.querySelector('#dockSlot'), {
     workoutTitle: workout.title,
     names: exerciseNameOptions(true),
+    pauseDefault: settings.pauseDefault,
     exercise,
     referenceName: exercise?.reference ? 'Video di riferimento salvato' : null,
     onBack: () => openRoute(backRoute),
@@ -1964,7 +2070,7 @@ function renderExerciseForm(workout, exercise, inDraft = false) {
   document.querySelector('#exerciseRepsInput').value = exercise?.reps ?? 8;
   document.querySelector('#exerciseMinutesInput').value = exercise?.minutes ?? 10;
   document.querySelector('#exerciseTimeSetsInput').value = exercise?.mode === 'time' ? exercise.sets ?? 1 : 1;
-  document.querySelector('#exerciseRestInput').value = restSecondsOf(exercise);
+  document.querySelector('#exerciseRestInput').value = exercise ? restSecondsOf(exercise) : settings.restDefault;
   document.querySelector('#personalReferenceInput').value = '';
   document.querySelector('#personalReferenceName').textContent = exercise ? 'Verifico il riferimento salvato…' : 'Nessun video selezionato';
   if (exercise) getPersonalReference(personalReferenceId(exercise.id)).then((reference) => {
@@ -1986,28 +2092,110 @@ function updateModeFields() {
   document.querySelector('#exerciseTimeSetsInput').required = timed;
 }
 
-async function deleteWorkout(id) {
-  const workout = workouts.find((item) => item.id === id);
-  if (!canEditWorkout(workout)) return;
-  if (!workout || !window.confirm(`Eliminare la scheda “${workout.title}” e i suoi esercizi?`)) return false;
-  const next = workouts.filter((item) => item.id !== id);
-  if (!saveWorkouts(storage, next)) { window.alert('Impossibile salvare la modifica su questo dispositivo.'); return false; }
+// ── Gestione schede (WorkoutManageScreen) ───────────────────────────────
+// Elimina: la scheda sparisce dall'app ma resta salvata, così allenamenti e record
+// restano nello Storico. Archivia: fuori dalla home, in fondo sotto «Archiviate».
+function updateWorkouts(change) {
+  const next = structuredClone(workouts);
+  if (change(next) === false) return false;
+  if (!saveWorkouts(storage, next)) { toast('Non riesco a salvare la modifica su questo dispositivo.'); return false; }
   workouts = next;
-  for (const exercise of workout.exercises) {
-    try { storage.removeItem(exerciseHistoryKey(id, exercise.id)); storage.removeItem(exerciseLogKey(id, exercise.id)); } catch { /* Il cloud elimina comunque lo storico con la scheda. */ }
-  }
-  await Promise.allSettled(workout.exercises.map(async (exercise) => {
-    const local = await getPersonalReference(personalReferenceId(exercise.id)).catch(() => null);
-    forgetReference(exercise, local);
-    await deletePersonalReference(personalReferenceId(exercise.id));
-  }));
-  if (activeWorkout?.workoutId === id) {
-    activeWorkout = null;
-    try { storage.removeItem(ACTIVE_WORKOUT_KEY); } catch { /* Già fermato nella pagina. */ }
-    updateWorkoutTimer();
-  }
-  openRoute('#/schede');
   return true;
+}
+
+function deleteWorkout(id) {
+  const workout = workouts.find((item) => item.id === id);
+  if (!workout || !canEditWorkout(workout)) return false;
+  if (activeWorkout?.workoutId === id) { toast('Termina prima l\'allenamento in corso con questa scheda.'); return false; }
+  const ok = updateWorkouts((next) => { Object.assign(next.find((item) => item.id === id), { deleted: true, archived: false }); });
+  if (ok) { toast(`«${workout.title}» eliminata. Storico e record restano.`); openRoute('#/schede'); }
+  return ok;
+}
+
+function archiveWorkout(id, archived = true) {
+  const workout = workouts.find((item) => item.id === id);
+  if (!workout || !canEditWorkout(workout)) return false;
+  if (archived && activeWorkout?.workoutId === id) { toast('Termina prima l\'allenamento in corso con questa scheda.'); return false; }
+  const ok = updateWorkouts((next) => { next.find((item) => item.id === id).archived = archived; });
+  if (ok) { toast(archived ? `«${workout.title}» archiviata` : `«${workout.title}» di nuovo nella home`); renderRoute(); }
+  return ok;
+}
+
+function duplicateWorkout(id) {
+  const workout = workouts.find((item) => item.id === id);
+  if (!workout) return;
+  const ok = updateWorkouts((next) => {
+    const index = next.findIndex((item) => item.id === id);
+    const copy = structuredClone(workout);
+    Object.assign(copy, { id: makeId(), title: `${workout.title} (copia)`.slice(0, 120), source: 'personal', archived: false, deleted: false });
+    copy.exercises = copy.exercises.map((exercise) => ({ ...exercise, id: makeId() }));
+    delete copy.coachPlanId;
+    next.splice(index + 1, 0, copy);
+  });
+  if (ok) { toast('Scheda duplicata'); renderRoute(); }
+}
+
+// Sposta su / giù tra le schede visibili della stessa modalità.
+function moveWorkout(id, step) {
+  const visible = modeWorkouts().filter((item) => !item.archived);
+  const index = visible.findIndex((item) => item.id === id);
+  const other = visible[index + step];
+  if (!other) return;
+  updateWorkouts((next) => {
+    const a = next.findIndex((item) => item.id === id);
+    const b = next.findIndex((item) => item.id === other.id);
+    [next[a], next[b]] = [next[b], next[a]];
+  });
+  renderRoute();
+}
+
+function confirmDeleteWorkout(workout) {
+  const count = (storage ? loadSessions(storage) : []).filter((item) => item.workoutId === workout.id).length;
+  const noun = workout.mode === 'pilates' ? 'sequenza' : 'scheda';
+  const kept = count ? `I tuoi ${count} ${count === 1 ? 'allenamento' : 'allenamenti'} e i record restano nello Storico.` : 'Storico e record restano.';
+  const remove = el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--dangerfill', text: `Elimina ${noun}` });
+  const archive = uiButton({ label: 'Archivia invece', variant: 'outline' });
+  const cancel = el('button', { type: 'button', className: 'bg-btn bg-btn--block bg-btn--ghost', text: 'Annulla' });
+  const view = openSheet({
+    label: `Eliminare «${workout.title}»?`,
+    content: el('div', { className: 'bg-sheet__body' },
+      el('div', {}, el('h2', { text: `Eliminare "${workout.title}"?` }), el('p', { text: `La ${noun} sparisce dalla home. ${kept}` })),
+      el('div', { className: 'bg-sheet__warn' }, icon('info', { small: true }), el('span', {}, 'Se vuoi solo toglierla dalla home per un po\', usa ', el('b', { text: 'Archivia' }), '.')),
+      el('div', { className: 'bg-sheet__actions' }, remove, archive, cancel)),
+  });
+  remove.addEventListener('click', () => { view.close(); if (deleteWorkout(workout.id)) discardDraft(); });
+  archive.addEventListener('click', () => { view.close(); discardDraft(); archiveWorkout(workout.id); openRoute('#/schede'); });
+  cancel.addEventListener('click', () => view.close());
+}
+
+// Menu della scheda: pressione lunga sulla card in home o «⋯» nella scheda aperta.
+function workoutMenu(workout) {
+  if (!canEditWorkout(workout) || demoPreview) return;
+  hapticLight();
+  const sessions = workoutSessions(storage, workout);
+  const minutes = averageMinutes(sessions);
+  const count = workout.exercises.length;
+  const visible = modeWorkouts().filter((item) => !item.archived);
+  const index = visible.findIndex((item) => item.id === workout.id);
+  let view;
+  const row = (label, run, { hint = null, danger = false, chevron = false, disabled = false } = {}) => el('button', {
+    type: 'button', className: `bg-srow${danger ? ' bg-srow--danger' : ''}`, disabled,
+    onClick: () => { view.close(); run(); },
+  }, el('span', {}, label, hint ? el('small', { text: hint }) : null), chevron ? icon('chevronRight', { small: true }) : null);
+  view = openSheet({
+    label: `Gestisci ${workout.title}`,
+    content: el('div', { className: 'bg-sheet__body' },
+      el('div', {}, el('h2', { text: workout.title }), el('p', { text: `${count} ${count === 1 ? 'esercizio' : 'esercizi'}${minutes ? ` · ~${minutes} min` : ''}` })),
+      el('div', { className: 'bg-set-list bg-set-list--sheet' },
+        row('Modifica', () => openRoute(`#/modifica-scheda/${workout.id}`), { chevron: true }),
+        row('Duplica', () => duplicateWorkout(workout.id)),
+        workout.archived ? null : row('Sposta su', () => moveWorkout(workout.id, -1), { disabled: index <= 0 }),
+        workout.archived ? null : row('Sposta giù', () => moveWorkout(workout.id, 1), { disabled: index < 0 || index >= visible.length - 1 }),
+        workout.archived
+          ? row('Ripristina nella home', () => archiveWorkout(workout.id, false))
+          : row('Archivia', () => archiveWorkout(workout.id), { hint: 'Sparisce dalla home, lo storico resta' }),
+        row('Elimina', () => confirmDeleteWorkout(workout), { danger: true }))),
+  });
 }
 
 async function deleteExercise(workoutId, exerciseId) {
@@ -2031,13 +2219,13 @@ async function deleteExercise(workoutId, exerciseId) {
 
 // «4.060»: in italiano Intl non separa le migliaia sotto 10.000, il design sì.
 function formatThousands(value) {
-  const [whole, decimals] = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1, useGrouping: false }).format(value).split(',');
+  const [whole, decimals] = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2, useGrouping: false }).format(value).split(',');
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}${decimals ? `,${decimals}` : ''}`;
 }
 
 function formatHistoryNumber(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 }).format(number) : '—';
+  return Number.isFinite(number) ? new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 }).format(number) : '—';
 }
 
 function historyDate(entry) {
@@ -2149,7 +2337,7 @@ function renderRecords(exercise) {
   const lift = liftText;
   const day = (time) => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(time);
   const key = exerciseKey(exercise.title);
-  const shared = workouts.filter((item) => item.mode !== 'pilates' && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === key)).length > 1;
+  const shared = workouts.filter((item) => item.mode !== 'pilates' && !item.deleted && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === key)).length > 1;
   // A tendina: chiusa di default, si apre a richiesta (resta aperta per quell'esercizio).
   const open = openRecords.has(key);
   const title = el('button', { type: 'button', className: 'bg-blocktitle bg-pbtoggle', 'aria-expanded': String(open), 'aria-controls': 'recordsPanel',
@@ -2232,6 +2420,36 @@ function celebrateRecord(line, exercise, record) {
   ];
 }
 
+// Suggerimento di progressione (ProgressionSuggestion): sopra «Le tue serie», solo Palestra,
+// disattivabile dalle Impostazioni, non per le schede del coach. «Usa» scrive i valori come
+// segnaposto; «Non ora» lo chiude per questa sessione; sparisce alla prima serie spuntata.
+const progressionUsed = new Map();
+const progressionDismissed = new Set();
+function progressionKey(workout, exercise) { return `${activeWorkout?.startedAt ?? 'idle'}:${workout.id}:${exercise.id}`; }
+function renderProgression(workout, exercise) {
+  const slot = document.querySelector('#suggestionSlot');
+  slot.replaceChildren();
+  if (!settings.progression || exercise.mode !== 'reps' || workout.source === 'coach' || workout.mode === 'pilates') return;
+  const key = progressionKey(workout, exercise);
+  if (progressionDismissed.has(key) || readSetLog(storage, workout.id, exercise.id).some((row) => row?.done)) return;
+  const tip = progressionSuggestion(exerciseEntries(storage, workouts, exercise.title), exercise);
+  if (!tip) return;
+  const kg = (value) => `${formatThousands(value)} kg`;
+  const texts = {
+    load: [`Prova ${kg(tip.load)}`, `La volta scorsa ${tip.previous?.sets} serie da ${tip.reps} a ${kg(tip.previous?.load ?? 0)}, tutte chiuse: sei pronto per +5%.`, `Usa ${kg(tip.load)}`],
+    reps: [`${kg(tip.load)}, punta a ${tip.reps} su tutte`, `${tip.stopped ? `La volta scorsa la serie ${tip.stopped.set} si è fermata a ${tip.stopped.reps}. ` : 'La volta scorsa hai fatto meno serie del previsto. '}Tieni il carico e chiudi tutte e ${tip.sets} le serie a ${tip.reps}.`, `Usa ${formatThousands(tip.load)} × ${tip.reps}`],
+    keep: [`Resta a ${kg(tip.load)}`, 'Nelle ultime 2 volte non hai chiuso le ripetizioni. Consolidiamo prima di salire.', `Usa ${kg(tip.load)}`],
+  }[tip.kind];
+  const box = el('section', { className: 'bg-sugg', 'aria-label': 'Suggerimento di progressione' },
+    el('div', { className: 'bg-sugg__top' },
+      el('span', { className: 'bg-sugg__ic' }, icon(tip.kind === 'keep' ? 'minus' : 'trend')),
+      el('span', {}, el('small', { text: exercise.title }), el('b', { text: texts[0] }), el('p', { text: texts[1] }))),
+    el('div', { className: 'bg-sugg__btns' },
+      uiButton({ label: 'Non ora', variant: 'outline', onClick: () => { progressionDismissed.add(key); slot.replaceChildren(); } }),
+      uiButton({ label: texts[2], onClick: () => { progressionUsed.set(key, { load: tip.load, reps: tip.reps }); progressionDismissed.add(key); slot.replaceChildren(); renderSetRows(workout, exercise); } })));
+  slot.append(box);
+}
+
 function renderSetRows(workout, exercise) {
   const key = exerciseLogKey(workout.id, exercise.id);
   const timed = exercise.mode === 'time';
@@ -2242,7 +2460,9 @@ function renderSetRows(workout, exercise) {
   const previous = readExerciseHistory(storage, workout.id, exercise.id).filter((entry) => entry.rows.length)
     .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0)).at(-1)?.rows ?? [];
   // Suggerimento: la stessa serie della volta scorsa; se non c'è, l'ultima serie già scritta oggi.
+  const suggested = progressionUsed.get(progressionKey(workout, exercise));
   const hint = (index, field) => {
+    if (suggested && (field === 'load' || field === 'reps')) return formatHistoryNumber(suggested[field]);
     let value = (previous[index] ?? previous.at(-1))?.[field];
     for (let earlier = index - 1; (value === '' || value == null) && earlier >= 0; earlier -= 1) value = values[earlier][field];
     return value !== '' && value != null ? formatHistoryNumber(value) : '';
@@ -2297,7 +2517,7 @@ function renderSetRows(workout, exercise) {
       row.done = !row.done;
       line.classList.toggle('bg-set--done', row.done);
       // Spunta: rimbalzo 1 → 0.85 → 1.15 → 1 (250 ms) e vibrazione leggera.
-      if (row.done) { hapticLight(); bounce(tick); }
+      if (row.done) { hapticLight(); bounce(tick); document.querySelector('#suggestionSlot').replaceChildren(); }
       tick.setAttribute('aria-pressed', String(row.done));
       tick.setAttribute('aria-label', row.done ? `Serie ${index + 1} completata` : `Segna serie ${index + 1} completata`);
       save();
@@ -2428,10 +2648,12 @@ function renderExercise(workout, exercise) {
   document.querySelector('#openAnalysisButton small').textContent = pilatesExercise ? 'Analisi della postura e tracking della posizione' : 'Analisi della tecnica e tracking della posizione';
   if (pilatesExercise) {
     document.querySelector('#curlInstructions').hidden = true;
+    document.querySelector('#suggestionSlot').replaceChildren();
     renderPilatesExercise(workout, exercise);
   } else {
     pilatesView = null;
     renderHistory(workout, exercise);
+    renderProgression(workout, exercise);
     renderSetRows(workout, exercise);
   }
   loadReferenceForExercise(workout, exercise, curl);
@@ -2671,11 +2893,11 @@ function renderRoute() {
   // I pulsanti fissi in basso appartengono alla schermata che li disegna.
   document.querySelector('#dockSlot').replaceChildren();
   const parts = window.location.hash.split('/').filter(Boolean);
-  const workout = workouts.find((item) => item.id === parts[2]);
+  const workout = workouts.find((item) => item.id === parts[2] && !item.deleted);
   const exercise = workout?.exercises.find((item) => item.id === parts[3]);
   let screen = 'home';
   // Senza accesso si parte sempre dalla scelta Palestra / Pilates.
-  if (loggedOut() && !['registrati', 'account', 'nuova-password', 'invito'].includes(parts[1])) {
+  if (loggedOut() && !['registrati', 'account', 'nuova-password', 'password-dimenticata', 'invito'].includes(parts[1])) {
     screen = 'welcome';
     renderWelcome(screens.welcome, {
       onChoose: (mode) => { chooseMode(mode, { pending: true }); resetSignup(); openRoute('#/registrati'); },
@@ -2694,6 +2916,21 @@ function renderRoute() {
   } else if (parts[1] === 'alias' && cloudUser) {
     screen = 'alias';
     renderAliasScreen();
+  } else if (parts[1] === 'password-dimenticata') {
+    screen = 'forgot';
+    renderForgotPassword(screens.forgot, {
+      email: forgotEmail,
+      onBack: () => openRoute('#/account'),
+      onLogin: () => openRoute('#/account'),
+      onGoogle: () => signInWith('google', 'Google'),
+      onSend: (email) => loginHandlers.onForgot(email).then((message) => (/non riuscita|Troppe/.test(message) ? message : null)),
+    });
+  } else if (parts[1] === 'impostazioni' && cloudUser) {
+    screen = 'settings';
+    renderSettingsScreen();
+  } else if (parts[1] === 'elimina-account' && cloudUser) {
+    screen = 'deleteAccount';
+    renderDeleteAccount(screens.deleteAccount, { onBack: () => openRoute('#/impostazioni'), onExport: exportAllData, onDelete: deleteOwnAccount });
   } else if (parts[1] === 'nuova-password') {
     screen = 'newPassword';
     renderNewPasswordScreen();

@@ -78,8 +78,9 @@ export async function loadLeaderboard(client) {
   return ok(await client.rpc('buddy_weekly_leaderboard'));
 }
 
-export async function loadFriendStats(client, friendId, period) {
-  return ok(await client.rpc('buddy_friend_stats', { friend: friendId, period }));
+// `mode`: 'gym' o 'pilates' per chi fa entrambe; senza, quella più usata nel periodo.
+export async function loadFriendStats(client, friendId, period, mode = null) {
+  return ok(await client.rpc('buddy_friend_stats', { friend: friendId, period, ...(mode ? { wanted: mode } : {}) }));
 }
 
 // Amicizie dell'utente: accettate, ricevute e inviate.
