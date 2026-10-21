@@ -5,6 +5,7 @@ import { icon } from '../ui/icons.js';
 import { formatDuration } from '../workout-summary.js';
 import { thousands } from '../format.js';
 import { liftText } from '../records.js';
+import { displayNumber, toDisplay, unitLabel } from '../units.js';
 
 // Colore dell'avatar: il tuo è quello tenue, gli amici alternano lime e scuro (stabile per persona).
 let currentMe = null;
@@ -41,7 +42,7 @@ export function ago(iso, now = Date.now()) {
   return hours < 24 ? `${hours} h` : `${Math.round(hours / 24)} g`;
 }
 
-function stats(post) {
+function stats(post, unit = 'kg') {
   if (post.mode === 'pilates') {
     const items = [];
     if (post.stats.duration !== undefined) items.push(['Durata', formatDuration(post.stats.duration)], ['Esercizi', String(post.stats.exercises ?? 0)]);
@@ -51,13 +52,13 @@ function stats(post) {
       items.map(([label, value]) => el('div', {}, el('span', { text: label }), el('b', { text: value }))));
   }
   const items = [['Durata', formatDuration(post.stats.duration ?? 0)]];
-  if (post.showLoads && post.stats.volume !== undefined) items.push(['Volume', `${thousands(post.stats.volume)} kg`]);
+  if (post.showLoads && post.stats.volume !== undefined) items.push(['Volume', `${thousands(displayNumber(post.stats.volume, unit, { volume: true }))} ${unitLabel(unit)}`]);
   items.push(['Serie', String(post.stats.sets ?? 0)]);
   return el('div', { className: `bg-post__stats${items.length === 2 ? ' bg-post__stats--two' : ''}` },
     items.map(([label, value]) => el('div', {}, el('span', { text: label }), el('b', { text: value }))));
 }
 
-export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor, onMenu, preview = true }) {
+export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor, onMenu, preview = true, unit = 'kg' }) {
   const name = names.get(post.userId) ?? 'Utente';
   const pilates = post.mode === 'pilates';
   const records = post.showLoads && !pilates ? (post.stats.records ?? []) : [];
@@ -77,9 +78,9 @@ export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor
     el('button', { type: 'button', className: 'bg-post__open', onClick: onOpen, disabled: !onOpen },
       el('h3', { className: 'bg-post__title', text: post.title }),
       post.body ? el('p', { className: 'bg-post__text', text: post.body }) : null),
-    stats(post),
+    stats(post, unit),
     records.length ? el('div', { className: 'bg-post__chips' }, records.map((record) => el('span', { className: 'bg-chip' },
-      icon('trophy', { small: true }), `${record.title} · ${liftText(record.load, record.reps)}`))) : null,
+      icon('trophy', { small: true }), `${record.title} · ${liftText(record.load, record.reps, unit)}`))) : null,
     milestones.length ? el('div', { className: 'bg-post__chips' }, milestones.map((item) => el('span', { className: 'bg-chip' },
       icon('star', { small: true }), item.title))) : null,
     el('div', { className: 'bg-post__foot' }, strength,
@@ -104,7 +105,7 @@ export function openActions(label, actions) {
   return view;
 }
 
-export function renderSocialFeed(root, { me, initial, leaderboard, notifications, requests = [], posts, names, status, onAccount, onFindFriends, onNotification, onRequest, onRequester, onPost, onAuthor, onStrength, onMenu, onLeaderboard }) {
+export function renderSocialFeed(root, { me, initial, leaderboard, notifications, requests = [], posts, names, status, onAccount, onFindFriends, onNotification, onRequest, onRequester, onPost, onAuthor, onStrength, onMenu, onLeaderboard, unit = 'kg' }) {
   const top = leaderboard.slice(0, 3);
   if (!top.some((row) => row.user_id === me)) {
     const mine = leaderboard.find((row) => row.user_id === me);
@@ -112,7 +113,7 @@ export function renderSocialFeed(root, { me, initial, leaderboard, notifications
   }
   // Classifica tra persone della stessa modalità: kg in Palestra, minuti in Pilates.
   const pilatesBoard = leaderboard[0]?.mode === 'pilates';
-  const score = (row) => (pilatesBoard ? `${thousands(Number(row.minutes ?? 0))} min` : `${thousands(Number(row.volume))} kg`);
+  const score = (row) => (pilatesBoard ? `${thousands(Number(row.minutes ?? 0))} min` : `${thousands(displayNumber(Number(row.volume), unit, { volume: true }))} ${unitLabel(unit)}`);
   const ranking = leaderboard.length > 1 ? el('button', { type: 'button', className: 'bg-weekstrip', onClick: onLeaderboard, 'aria-label': 'Classifica della settimana, apri la classifica completa' },
     el('span', { className: 'bg-weekstrip__title' }, 'Classifica della settimana', el('span', { text: pilatesBoard ? 'minuti di pratica' : 'volume sollevato' })),
     top.map((row) => el('span', { className: `bg-rank${row.user_id === me ? ' bg-rank--me' : ''}` },
@@ -147,12 +148,12 @@ export function renderSocialFeed(root, { me, initial, leaderboard, notifications
       ranking,
       posts.length
         ? el('div', { className: 'bg-feed' }, posts.map((post) => postCard(post, names, {
-          onStrength: () => onStrength(post), onOpen: () => onPost(post), onAuthor: () => onAuthor(post.userId), onMenu: () => onMenu(post),
+          onStrength: () => onStrength(post), onOpen: () => onPost(post), onAuthor: () => onAuthor(post.userId), onMenu: () => onMenu(post), unit,
         })))
         : el('div', { className: 'bg-form' }, emptyState('Ancora nessun allenamento dei tuoi amici'), button({ label: 'Trova amici', onClick: onFindFriends }))));
 }
 
-export function renderLeaderboard(root, { me, rows, onBack, onAuthor }) {
+export function renderLeaderboard(root, { me, rows, onBack, onAuthor, unit = 'kg' }) {
   const pilatesBoard = rows[0]?.mode === 'pilates';
   root.replaceChildren(
     topBar({ title: 'Classifica', onBack }),
@@ -161,10 +162,10 @@ export function renderLeaderboard(root, { me, rows, onBack, onAuthor }) {
       el('div', { className: 'bg-weekstrip bg-weekstrip--full' }, rows.map((row, index) => el('button', {
         type: 'button', className: `bg-rank${row.user_id === me ? ' bg-rank--me' : ''}`, onClick: () => onAuthor(row.user_id),
       }, el('i', { text: String(index + 1) }), avatar(row.user_id, row.alias, 'bg-av--sm'),
-      el('span', { text: row.user_id === me ? 'Tu' : row.alias }), el('b', { text: pilatesBoard ? `${thousands(Number(row.minutes ?? 0))} min` : `${thousands(Number(row.volume))} kg` }))))));
+      el('span', { text: row.user_id === me ? 'Tu' : row.alias }), el('b', { text: pilatesBoard ? `${thousands(Number(row.minutes ?? 0))} min` : `${thousands(displayNumber(Number(row.volume), unit, { volume: true }))} ${unitLabel(unit)}` }))))));
 }
 
-export function renderPostDetail(root, dock, { me, post, names, onBack, onStrength, onAuthor, onMenu, onSend, onCommentMenu }) {
+export function renderPostDetail(root, dock, { me, post, names, onBack, onStrength, onAuthor, onMenu, onSend, onCommentMenu, unit = 'kg' }) {
   const input = el('input', { placeholder: 'Scrivi un commento', 'aria-label': 'Scrivi un commento', maxlength: 1000, autocomplete: 'off' });
   const send = el('button', { type: 'submit', 'aria-label': 'Invia', disabled: true }, icon('arrowRight'));
   input.addEventListener('input', () => { send.disabled = !input.value.trim(); });
@@ -194,7 +195,7 @@ export function renderPostDetail(root, dock, { me, post, names, onBack, onStreng
     topBar({ title: 'Post', onBack }),
     el('main', {},
       el('div', { className: 'bg-feed bg-feed--single' }, postCard(post, names, {
-        onStrength, onComments: () => input.focus(), onAuthor: () => onAuthor(post.userId), onMenu, preview: false,
+        onStrength, onComments: () => input.focus(), onAuthor: () => onAuthor(post.userId), onMenu, preview: false, unit,
       })),
       el('div', { className: 'bg-blocktitle bg-blocktitle--comments' }, el('h2', { text: 'Commenti' }), el('span', { text: String(post.comments.length) })),
       comments.length ? el('div', { className: 'bg-comments' }, comments) : el('p', { className: 'bg-empty bg-empty--inset', text: 'Ancora nessun commento.' })));
@@ -225,7 +226,7 @@ function pilatesFriendStats(stats, weeks, top) {
   ];
 }
 
-export function renderFriendProfile(root, { friend, stats, period, posts, names, onBack, onPeriod, onMode, onFriendship, onMenu, onPost, onStrength }) {
+export function renderFriendProfile(root, { friend, stats, period, posts, names, onBack, onPeriod, onMode, onFriendship, onMenu, onPost, onStrength, unit = 'kg' }) {
   const since = stats?.since ? `amici da ${new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(new Date(stats.since))}` : '';
   const hidden = !stats || stats.hidden;
   const weeks = stats?.weeks ?? [];
@@ -259,12 +260,12 @@ export function renderFriendProfile(root, { friend, stats, period, posts, names,
           stats.mode === 'pilates' ? pilatesFriendStats(stats, weeks, top) : null,
           stats.mode === 'pilates' ? null : el('div', { className: 'bg-grid2' },
             el('div', { className: 'bg-stat' }, el('b', { text: String(stats.workouts ?? 0) }), el('span', { text: 'allenamenti' })),
-            el('div', { className: 'bg-stat' }, el('b', { text: stats.volume == null ? '—' : thousands(Number(stats.volume)) }), el('span', { text: 'kg di volume' })),
+            el('div', { className: 'bg-stat' }, el('b', { text: stats.volume == null ? '—' : thousands(displayNumber(Number(stats.volume), unit, { volume: true })) }), el('span', { text: `${unitLabel(unit)} di volume` })),
             el('div', { className: 'bg-stat' }, el('b', { text: hours ? `${hours} h ${minutes}` : `${minutes} min` }), el('span', { text: 'tempo in palestra' })),
             el('div', { className: 'bg-stat' }, el('b', { text: stats.records == null ? '—' : String(stats.records) }), el('span', { text: 'nuovi record' }))),
           stats.volume == null || stats.mode === 'pilates' ? null : el('div', { className: 'bg-month bg-month--spaced' },
             el('div', { className: 'bg-month__head' }, el('b', { text: 'Volume per settimana' }), el('span', { text: 'ultime 8' })),
-            el('div', { className: 'bg-bars', role: 'img', 'aria-label': `Volume delle ultime 8 settimane: ${weeks.map((value) => `${thousands(Number(value))} kg`).join(', ')}` },
+            el('div', { className: 'bg-bars', role: 'img', 'aria-label': `Volume delle ultime 8 settimane: ${weeks.map((value) => `${thousands(displayNumber(Number(value), unit, { volume: true }))} ${unitLabel(unit)}`).join(', ')}` },
               weeks.map((value, index) => el('i', { className: index === weeks.length - 1 ? 'on' : '', style: `height:${Math.max(4, Math.round(Number(value) / top * 100))}%` }))),
             el('div', { className: 'bg-bars__x', 'aria-hidden': 'true' }, weeks.map((_, index) => el('span', { text: `S${index + 1}` })))),
           stats.bests?.length ? [
@@ -273,12 +274,12 @@ export function renderFriendProfile(root, { friend, stats, period, posts, names,
               el('span', { className: 'bg-exrow__num' }, icon('trophy', { small: true })),
               el('span', { className: 'bg-exrow__body' }, el('span', { className: 'bg-exrow__name', text: best.title }),
                 el('span', { className: 'bg-exrow__meta', text: recordDate(Number(best.at)) })),
-              el('span', { className: 'bg-exrow__target', text: liftText(best.load, best.reps) })))),
+              el('span', { className: 'bg-exrow__target', text: liftText(best.load, best.reps, unit) })))),
           ] : null,
         ],
       posts.length ? [
         el('div', { className: 'bg-blocktitle bg-blocktitle--rows' }, el('h2', { text: 'Allenamenti pubblicati' })),
-        el('div', { className: 'bg-feed' }, posts.map((post) => postCard(post, names, { onOpen: () => onPost(post), onStrength: () => onStrength(post), onAuthor: () => {} }))),
+        el('div', { className: 'bg-feed' }, posts.map((post) => postCard(post, names, { onOpen: () => onPost(post), onStrength: () => onStrength(post), onAuthor: () => {}, unit }))),
       ] : null,
       el('div', { className: 'bg-exspacer bg-exspacer--form', 'aria-hidden': 'true' })));
 }
@@ -320,7 +321,7 @@ export function renderFindFriends(root, { friends, inviteLink, status, onBack, o
 }
 
 // PublishSheet: pubblicare è sempre una scelta dell'utente.
-export function openPublishSheet({ session, suggested, onPublish }) {
+export function openPublishSheet({ session, suggested, onPublish, unit = 'kg' }) {
   let showLoads = true;
   let visibility = 'friends';
   const title = el('input', { id: 'publishTitle', className: 'bg-input bg-input--sheet', value: suggested, maxlength: 80, autocomplete: 'off' });
@@ -337,7 +338,7 @@ export function openPublishSheet({ session, suggested, onPublish }) {
       items.push(['Attrezzo', (summary.equipment ?? []).join(', ') || '—']);
     } else {
       items.push(['Durata', formatDuration(session.endedAt - session.startedAt)]);
-      if (showLoads) items.push(['Volume', `${thousands(summary.volume ?? 0)} kg`]);
+      if (showLoads) items.push(['Volume', `${thousands(displayNumber(summary.volume ?? 0, unit, { volume: true }))} ${unitLabel(unit)}`]);
       items.push(['Serie', String(summary.sets ?? 0)]);
     }
     preview.classList.toggle('bg-post__stats--one', items.length === 1);
@@ -368,7 +369,7 @@ export function openPublishSheet({ session, suggested, onPublish }) {
       el('div', {}, el('label', { className: 'bg-flabel', for: 'publishTitle', text: 'Titolo' }), title),
       body, preview,
       el('div', {},
-        el('div', { className: 'bg-toggle' }, el('span', {}, loadsLabel, el('small', { text: pilates ? 'durata, esercizi fatti e traguardi' : 'kg di ogni esercizio e il record' })), loads),
+        el('div', { className: 'bg-toggle' }, el('span', {}, loadsLabel, el('small', { text: pilates ? 'durata, esercizi fatti e traguardi' : `${unitLabel(unit)} di ogni esercizio e il record` })), loads),
         audience),
       status, publish),
   });

@@ -35,6 +35,7 @@ import { exerciseEntries, exerciseKey, judgeSet, liftText, progressionSuggestion
 import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
+import { displayNumber, formatWeight, fromInput, roundIncrement, toDisplay, unitLabel } from './units.js';
 import { SESSIONS_KEY, backfillSessions, calendarMonth, daySessions, defaultDay, loadSessions, sessionFromSummary, sessionMode, upsertSession } from './sessions.js';
 import { createCoachUI } from './coach-ui.js';
 import { canCompressVideo, compressVideo } from './video-compress.js';
@@ -356,6 +357,7 @@ function renderProfileScreen() {
     status: lastAccountMessage,
     canRunBench: benchAvailableHere,
     version: appVersion,
+    unit: settings.unit,
     onSettings: () => openRoute('#/impostazioni'),
     modeSection: modePicker({ mode: currentMode(), locked: !!activeWorkout, onChange: (mode, origin) => { void changeMode(mode, origin); } }),
     privacy: currentProfile ? { shareStats: currentProfile.share_stats !== false, shareLoads: currentProfile.share_loads !== false } : null,
@@ -1044,6 +1046,7 @@ function openPublish(workout, sessionId) {
   openPublishSheet({
     session,
     suggested: social.suggestedTitle(session),
+    unit: settings.unit,
     onPublish: async (choice) => {
       try {
         await social.publishSession(cloudClient, cloudUser.id, session, choice);
@@ -1086,6 +1089,7 @@ function renderSummaryScreen(workout, startedAt, endedAt) {
     summary: { ...workoutSummary(storage, workout, sessionId, workouts), ...(endedAt > startedAt ? { duration: endedAt - startedAt } : {}) },
     name: currentProfile?.alias || currentProfile?.first_name || '',
     celebrate,
+    unit: settings.unit,
     published: publishedSessions.has(sessionId),
     onDone: () => openRoute('#/schede'),
     onPublish: () => openPublish(workout, sessionId),
@@ -1113,6 +1117,7 @@ function renderSessionSummary(session) {
     summary: { ...session.summary, duration: session.endedAt - session.startedAt },
     name: currentProfile?.alias || currentProfile?.first_name || '',
     celebrate: false,
+    unit: settings.unit,
     date: new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(session.endedAt),
     published: publishedSessions.has(session.id),
     onDone: () => openRoute('#/storico'),
@@ -1527,6 +1532,7 @@ function renderHistoryScreen() {
     day: historyState.day,
     sessions: daySessions(sessions, { year, month, day: historyState.day, filter }),
     initial: accountInitial(),
+    unit: settings.unit,
     onAccount: () => openRoute('#/account'),
     onFilter: (value) => { historyState.filter = value; historyState.day = null; renderHistoryScreen(); },
     onDay: (day) => { historyState.day = day; renderHistoryScreen(); refreshFocusList(); },
@@ -1618,6 +1624,7 @@ function renderSocialScreen() {
       onRequester: (userId) => openRoute(`#/social/amico/${userId}`),
       posts: socialState.posts,
       names: socialState.names,
+      unit: settings.unit,
       status: socialState.loaded ? socialState.status : 'Carico gli allenamenti dei tuoi amici…',
       onAccount: () => openRoute('#/account'),
       onFindFriends: () => openRoute('#/social/amici'),
@@ -1703,7 +1710,7 @@ async function renderPostScreen(postId) {
   if (!data) { screens.post.replaceChildren(topBar({ title: 'Post', onBack: () => openRoute('#/social') }), emptyState(data === null ? 'Questo post non è più disponibile.' : 'Post non disponibile. Controlla la connessione.')); return; }
   const { post, names } = data;
   const redraw = () => renderPostDetail(screens.post, dock, {
-    me: cloudUser.id, post, names,
+    me: cloudUser.id, post, names, unit: settings.unit,
     onBack: () => openRoute('#/social'),
     onStrength: () => strengthen(post, redraw),
     onAuthor: (userId) => openRoute(userId === cloudUser.id ? '#/account' : `#/social/amico/${userId}`),
@@ -1765,7 +1772,7 @@ async function renderFriendScreen(userId) {
     ]);
     if (!window.location.hash.includes(userId)) return;
     renderFriendProfile(screens.friend, {
-      friend, stats, period: socialState.period, posts: feed.posts, names: feed.names,
+      friend, stats, period: socialState.period, posts: feed.posts, names: feed.names, unit: settings.unit,
       onBack: () => openRoute('#/social'),
       onPeriod: (period) => { socialState.period = period; void draw(); },
       onMode: (mode) => { socialState.friendMode = { userId, mode }; void draw(); },
@@ -1852,7 +1859,7 @@ async function renderLeaderboardScreen() {
   const rows = await social.loadLeaderboard(cloudClient).catch(() => socialState.leaderboard);
   if (window.location.hash !== '#/social/classifica') return;
   renderLeaderboard(screens.leaderboard, {
-    me: cloudUser.id, rows,
+    me: cloudUser.id, rows, unit: settings.unit,
     onBack: () => openRoute('#/social'),
     onAuthor: (userId) => openRoute(userId === cloudUser.id ? '#/account' : `#/social/amico/${userId}`),
   });
@@ -1931,6 +1938,7 @@ function renderWorkout(workout) {
     workout, storage, active,
     pilatesProgress: workout.mode === 'pilates' ? { done: pilatesDone(workout), current: pilatesClock?.workoutId === workout.id ? pilatesClock.index : null } : null,
     editable: canEditWorkout(workout),
+    unit: settings.unit,
     onBack: () => openRoute('#/schede'),
     onOpenExercise: (exercise) => openRoute(`#/esercizio/${workout.id}/${exercise.id}`),
     onStart: () => { if (startWorkout(workout)) renderWorkout(workout); },
@@ -2237,7 +2245,10 @@ function renderProgressChart(exercise, history) {
     .filter((item) => item.value !== null).slice(-8);
   const chart = document.querySelector('#progressChart');
   chart.replaceChildren();
-  const unit = exercise.mode === 'time' ? 'min' : 'kg';
+  const timed = exercise.mode === 'time';
+  const unit = timed ? 'min' : unitLabel(settings.unit);
+  // I carichi restano in kg nel modello: qui si mostrano nell'unità scelta.
+  const show = (value) => formatHistoryNumber(timed ? value : displayNumber(value, settings.unit));
   const trend = document.querySelector('#progressTrend');
   if (!series.length) {
     trend.textContent = 'Inserisci un valore per vedere l’andamento.';
@@ -2246,7 +2257,7 @@ function renderProgressChart(exercise, history) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 300 112');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', `Andamento: ${series.map((item) => `${historyDate(item.entry)} ${formatHistoryNumber(item.value)} ${unit}`).join(', ')}`);
+  svg.setAttribute('aria-label', `Andamento: ${series.map((item) => `${historyDate(item.entry)} ${show(item.value)} ${unit}`).join(', ')}`);
   const values = series.map((item) => item.value);
   const low = Math.max(0, Math.min(...values) - Math.max(1, (Math.max(...values) - Math.min(...values)) * 0.3));
   const high = Math.max(...values) + Math.max(1, (Math.max(...values) - Math.min(...values)) * 0.3);
@@ -2262,8 +2273,8 @@ function renderProgressChart(exercise, history) {
     return element;
   };
   svgElement('line', { x1: 34, x2: 282, y1: 78, y2: 78, class: 'grid' });
-  svgElement('text', { x: 0, y: 21 }, formatHistoryNumber(high));
-  svgElement('text', { x: 0, y: 80 }, formatHistoryNumber(low));
+  svgElement('text', { x: 0, y: 21 }, show(high));
+  svgElement('text', { x: 0, y: 80 }, show(low));
   svgElement('polyline', { points: series.map((item, index) => {
     const coordinates = point(item, index);
     return `${coordinates.x},${coordinates.y}`;
@@ -2282,10 +2293,10 @@ function renderProgressChart(exercise, history) {
   if (series.length < 2) { trend.textContent = 'Servono due sedute per confrontare i carichi.'; return; }
   const difference = series.at(-1).value - series[0].value;
   trend.textContent = difference > 0
-    ? `In aumento: +${formatHistoryNumber(difference)} ${unit} rispetto alla prima seduta mostrata.`
+    ? `In aumento: +${show(difference)} ${unit} rispetto alla prima seduta mostrata.`
     : difference < 0
-      ? `In diminuzione: ${formatHistoryNumber(difference)} ${unit} rispetto alla prima seduta mostrata.`
-      : `Stabile rispetto alla prima seduta mostrata: ${formatHistoryNumber(series.at(-1).value)} ${unit}.`;
+      ? `In diminuzione: ${show(difference)} ${unit} rispetto alla prima seduta mostrata.`
+      : `Stabile rispetto alla prima seduta mostrata: ${show(series.at(-1).value)} ${unit}.`;
 }
 
 function renderHistory(workout, exercise) {
@@ -2302,16 +2313,18 @@ function renderHistory(workout, exercise) {
     const cell = (value, unit) => (value !== '' && value != null
       ? el('td', {}, el('b', { text: formatHistoryNumber(value) }), unit ? ` ${unit}` : '')
       : el('td', { text: '—' }));
+    // Il carico è salvato in kg: si mostra convertito, con l'unità scelta.
+    const loadCell = (value) => (value === '' || value == null ? el('td', { text: '—' }) : cell(displayNumber(value, settings.unit), unitLabel(settings.unit)));
     const volume = last.rows.reduce((sum, row) => sum + (Number(row.reps) || 0) * (Number(row.load) || 0), 0);
     const minutes = last.rows.reduce((sum, row) => sum + (Number(row.minutes) || 0), 0);
     rows.replaceChildren(el('table', { className: 'bg-table' },
       el('thead', {}, el('tr', {}, el('th', { text: 'Serie' }), ...(timed ? [el('th', { text: 'Minuti' })] : [el('th', { text: 'Rip.' }), el('th', { text: 'Carico' })]))),
       el('tbody', {}, last.rows.map((row, index) => el('tr', {},
         el('td', { text: String(row.set ?? index + 1) }),
-        ...(timed ? [cell(row.minutes, 'min')] : [cell(row.reps), cell(row.load, 'kg')])))),
+        ...(timed ? [cell(row.minutes, 'min')] : [cell(row.reps), loadCell(row.load)])))),
       el('tfoot', {}, el('tr', {}, el('td', { colspan: timed ? 2 : 3, text: timed
         ? `Tempo totale: ${formatHistoryNumber(minutes)} min`
-        : `Volume totale: ${formatThousands(volume)} kg` })))));
+        : `Volume totale: ${formatThousands(displayNumber(volume, settings.unit, { volume: true }))} ${unitLabel(settings.unit)}` })))));
   }
   const toggle = document.querySelector('#toggleProgressButton');
   const panel = document.querySelector('#progressPanel');
@@ -2334,7 +2347,7 @@ function renderRecords(exercise) {
   section.hidden = exercise.mode !== 'reps';
   if (section.hidden) return;
   const { start, events, top } = recordTimeline(exerciseEntries(storage, workouts, exercise.title));
-  const lift = liftText;
+  const lift = (load, reps) => liftText(load, reps, settings.unit);
   const day = (time) => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(time);
   const key = exerciseKey(exercise.title);
   const shared = workouts.filter((item) => item.mode !== 'pilates' && !item.deleted && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === key)).length > 1;
@@ -2343,7 +2356,7 @@ function renderRecords(exercise) {
   const title = el('button', { type: 'button', className: 'bg-blocktitle bg-pbtoggle', 'aria-expanded': String(open), 'aria-controls': 'recordsPanel',
     onClick: () => { if (open) openRecords.delete(key); else openRecords.add(key); renderRecords(exercise); } },
     el('h2', { text: 'Massimale' }),
-    el('span', { className: 'bg-pbtoggle__sum' }, top ? liftText(top.load, top.reps) : 'nessun dato', icon('chevronDown', { small: true, className: 'bg-pbtoggle__chev' })));
+    el('span', { className: 'bg-pbtoggle__sum' }, top ? lift(top.load, top.reps) : 'nessun dato', icon('chevronDown', { small: true, className: 'bg-pbtoggle__chev' })));
   if (!open) { section.replaceChildren(title); return; }
   if (!start) {
     section.replaceChildren(title, el('section', { className: 'bg-pb', id: 'recordsPanel', 'aria-label': 'Massimale' },
@@ -2364,7 +2377,7 @@ function renderRecords(exercise) {
         el('span', { className: 'bg-pb__meta' }, day(top.at), shared ? el('span', { className: 'bg-pb__all', text: 'da tutte le schede' }) : null))),
     el('ol', { className: 'bg-pb__list' },
       [...events].reverse().map((event) => row(day(event.at), event.kind === 'load' ? 'Carico' : 'Ripetizioni', lift(event.load, event.reps),
-        event.kind === 'load' ? `↑ ${formatThousands(event.gain)} kg` : `↑ ${event.gain} rip.`)),
+        event.kind === 'load' ? `↑ ${formatWeight(event.gain, settings.unit)}` : `↑ ${event.gain} rip.`)),
       row(day(start.at), 'Punto di partenza', lift(start.load, start.reps), icon('flag', { small: true }), ' bg-pb__row--start'))));
 }
 
@@ -2390,7 +2403,7 @@ function bounce(node) {
 const BURST = [[-67, -22, 0], [-74, -54, 47], [-67, -92, 94], [-22, -67, 141], [0, -92, 188], [35, -108, 235], [41, -57, 282], [74, -54, 329], [108, -35, 16], [70, 0, 63], [87, 28, 110], [92, 67, 157]];
 let recordTimers = [];
 function celebrateRecord(line, exercise, record) {
-  const gain = record.kind === 'load' ? `+${formatThousands(record.gain)} kg` : `+${record.gain} rip.`;
+  const gain = record.kind === 'load' ? `+${formatWeight(record.gain, settings.unit)}` : `+${record.gain} rip.`;
   line.querySelectorAll('.bg-prbadge, .bg-plus, .bg-prburst').forEach((node) => node.remove());
   line.classList.remove('bg-set--pr');
   void line.offsetWidth;
@@ -2404,7 +2417,7 @@ function celebrateRecord(line, exercise, record) {
   // Vibrazione «success» anche con «Riduci movimento».
   hapticSuccess();
   recordTimers.forEach(clearTimeout);
-  const detail = `${exercise.title} · ${liftText(record.load, record.reps)} · ${record.kind === 'load' ? `${gain} sul precedente` : `${gain} a questo carico`}`;
+  const detail = `${exercise.title} · ${liftText(record.load, record.reps, settings.unit)} · ${record.kind === 'load' ? `${gain} sul precedente` : `${gain} a questo carico`}`;
   const slot = document.querySelector('#timerSlot');
   slot.querySelector('.bg-prtoast')?.remove();
   const toastNode = el('button', { type: 'button', className: 'bg-prtoast', role: 'status', 'aria-live': 'polite', 'aria-label': `Nuovo record. ${detail}. Tocca per chiudere` },
@@ -2434,11 +2447,13 @@ function renderProgression(workout, exercise) {
   if (progressionDismissed.has(key) || readSetLog(storage, workout.id, exercise.id).some((row) => row?.done)) return;
   const tip = progressionSuggestion(exerciseEntries(storage, workouts, exercise.title), exercise);
   if (!tip) return;
-  const kg = (value) => `${formatThousands(value)} kg`;
+  // Carico suggerito arrotondato al passo dell'unità scelta (0,25 kg o 1 lb); resta in kg.
+  const load = roundIncrement(tip.load, settings.unit);
+  const weight = (value) => formatWeight(value, settings.unit);
   const texts = {
-    load: [`Prova ${kg(tip.load)}`, `La volta scorsa ${tip.previous?.sets} serie da ${tip.reps} a ${kg(tip.previous?.load ?? 0)}, tutte chiuse: sei pronto per +5%.`, `Usa ${kg(tip.load)}`],
-    reps: [`${kg(tip.load)}, punta a ${tip.reps} su tutte`, `${tip.stopped ? `La volta scorsa la serie ${tip.stopped.set} si è fermata a ${tip.stopped.reps}. ` : 'La volta scorsa hai fatto meno serie del previsto. '}Tieni il carico e chiudi tutte e ${tip.sets} le serie a ${tip.reps}.`, `Usa ${formatThousands(tip.load)} × ${tip.reps}`],
-    keep: [`Resta a ${kg(tip.load)}`, 'Nelle ultime 2 volte non hai chiuso le ripetizioni. Consolidiamo prima di salire.', `Usa ${kg(tip.load)}`],
+    load: [`Prova ${weight(load)}`, `La volta scorsa ${tip.previous?.sets} serie da ${tip.reps} a ${weight(tip.previous?.load ?? 0)}, tutte chiuse: sei pronto per +5%.`, `Usa ${weight(load)}`],
+    reps: [`${weight(load)}, punta a ${tip.reps} su tutte`, `${tip.stopped ? `La volta scorsa la serie ${tip.stopped.set} si è fermata a ${tip.stopped.reps}. ` : 'La volta scorsa hai fatto meno serie del previsto. '}Tieni il carico e chiudi tutte e ${tip.sets} le serie a ${tip.reps}.`, `Usa ${weight(load)} × ${tip.reps}`],
+    keep: [`Resta a ${weight(load)}`, 'Nelle ultime 2 volte non hai chiuso le ripetizioni. Consolidiamo prima di salire.', `Usa ${weight(load)}`],
   }[tip.kind];
   const box = el('section', { className: 'bg-sugg', 'aria-label': 'Suggerimento di progressione' },
     el('div', { className: 'bg-sugg__top' },
@@ -2446,26 +2461,37 @@ function renderProgression(workout, exercise) {
       el('span', {}, el('small', { text: exercise.title }), el('b', { text: texts[0] }), el('p', { text: texts[1] }))),
     el('div', { className: 'bg-sugg__btns' },
       uiButton({ label: 'Non ora', variant: 'outline', onClick: () => { progressionDismissed.add(key); slot.replaceChildren(); } }),
-      uiButton({ label: texts[2], onClick: () => { progressionUsed.set(key, { load: tip.load, reps: tip.reps }); progressionDismissed.add(key); slot.replaceChildren(); renderSetRows(workout, exercise); } })));
+      uiButton({ label: texts[2], onClick: () => { progressionUsed.set(key, { load, reps: tip.reps }); progressionDismissed.add(key); slot.replaceChildren(); renderSetRows(workout, exercise); } })));
   slot.append(box);
 }
 
 function renderSetRows(workout, exercise) {
   const key = exerciseLogKey(workout.id, exercise.id);
   const timed = exercise.mode === 'time';
-  const fields = timed ? [['minutes', 'Minuti', 'decimal']] : [['reps', 'Ripetizioni', 'numeric'], ['load', 'Carico (kg)', 'decimal']];
+  const unit = settings.unit;
+  const fields = timed ? [['minutes', 'Minuti', 'decimal']] : [['reps', 'Ripetizioni', 'numeric'], ['load', `Carico (${unitLabel(unit)})`, 'decimal']];
   const empty = () => Object.fromEntries([...fields.map(([field]) => [field, '']), ['done', false]]);
   const saved = readSetLog(storage, workout.id, exercise.id);
   const values = Array.from({ length: Math.max(plannedSets(exercise), saved.length) }, (_, index) => ({ ...empty(), ...saved[index], done: rowDone(exercise, saved[index]) }));
   const previous = readExerciseHistory(storage, workout.id, exercise.id).filter((entry) => entry.rows.length)
     .sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0)).at(-1)?.rows ?? [];
+  // Nel campo si scrive e si legge nell'unità scelta, ma si salva sempre in kg.
+  const number = (value) => String(Math.round(value * 10) / 10).replace('.', ',');
+  const asStored = (field, text) => (field !== 'load' || unit === 'kg' ? text.trim().replace(',', '.') : String(fromInput(text, unit)));
+  // Il segnaposto può avere le migliaia separate: si tolgono prima di convertirlo.
+  const asStoredHint = (field, text) => {
+    const clean = text.replace(/\./g, '');
+    return field !== 'load' || unit === 'kg' ? clean.replace(',', '.') : String(fromInput(clean, unit));
+  };
+  const asInput = (field, raw) => (raw === '' || raw == null ? null : (field !== 'load' || unit === 'kg' ? String(raw) : number(toDisplay(raw, unit))));
+  const asHint = (field, raw) => (raw === '' || raw == null ? '' : (field !== 'load' || unit === 'kg' ? formatHistoryNumber(raw) : number(toDisplay(raw, unit))));
   // Suggerimento: la stessa serie della volta scorsa; se non c'è, l'ultima serie già scritta oggi.
   const suggested = progressionUsed.get(progressionKey(workout, exercise));
   const hint = (index, field) => {
-    if (suggested && (field === 'load' || field === 'reps')) return formatHistoryNumber(suggested[field]);
+    if (suggested && (field === 'load' || field === 'reps')) return asHint(field, suggested[field]);
     let value = (previous[index] ?? previous.at(-1))?.[field];
     for (let earlier = index - 1; (value === '' || value == null) && earlier >= 0; earlier -= 1) value = values[earlier][field];
-    return value !== '' && value != null ? formatHistoryNumber(value) : '';
+    return asHint(field, value);
   };
   const inputRows = [];
   const refreshHints = () => inputRows.forEach((inputs, index) => {
@@ -2474,11 +2500,11 @@ function renderSetRows(workout, exercise) {
   const saveNote = document.querySelector('#saveNote');
   // «8 ripetizioni × 180 kg» per la prossima serie: valori già scritti o quelli della scorsa volta.
   function nextSetDetail(next) {
-    const value = (field) => values[next][field] || hint(next, field);
+    const value = (field) => asInput(field, values[next][field]) || hint(next, field);
     if (timed) return value('minutes') ? `${value('minutes')} min` : '';
     const reps = value('reps');
     const load = value('load');
-    return [reps ? `${reps} ripetizioni` : '', load ? `${load} kg` : ''].filter(Boolean).join(' × ');
+    return [reps ? `${reps} ripetizioni` : '', load ? `${load} ${unitLabel(unit)}` : ''].filter(Boolean).join(' × ');
   }
   function save() {
     try {
@@ -2498,10 +2524,10 @@ function renderSetRows(workout, exercise) {
     const line = el('div', { className: `bg-set${row.done ? ' bg-set--done' : ''}` }, el('span', { className: 'bg-set__num', text: String(index + 1) }));
     const inputs = fields.map(([field, label, mode]) => {
       const input = el('input', {
-        className: 'bg-set__in', inputmode: mode, value: row[field] || null, placeholder: hint(index, field) || null,
+        className: 'bg-set__in', inputmode: mode, value: asInput(field, row[field]), placeholder: hint(index, field) || null,
         'aria-label': `Serie ${index + 1} ${label.toLocaleLowerCase('it')}`, autocomplete: 'off',
       });
-      input.addEventListener('input', () => { row[field] = input.value.trim().replace(',', '.'); save(); });
+      input.addEventListener('input', () => { row[field] = asStored(field, input.value); save(); });
       line.append(input);
       return [field, input];
     });
@@ -2510,7 +2536,7 @@ function renderSetRows(workout, exercise) {
     tick.addEventListener('click', () => {
       if (!row.done) {
         for (const [field, input] of inputs) {
-          if (!input.value && input.placeholder) { input.value = input.placeholder; row[field] = input.placeholder.replace(/\./g, '').replace(',', '.'); }
+          if (!input.value && input.placeholder) { input.value = input.placeholder; row[field] = asStoredHint(field, input.placeholder); }
         }
         if (inputs.every(([field]) => row[field] === '')) { inputs[0][1].focus(); return; }
       }

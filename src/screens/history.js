@@ -6,6 +6,7 @@ import { icon } from '../ui/icons.js';
 import { formatDuration } from '../workout-summary.js';
 import { thousands } from '../format.js';
 import { liftText } from '../records.js';
+import { displayNumber, toDisplay, unitLabel } from '../units.js';
 
 const WEEKDAYS = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
 const FILTERS = [['all', 'Tutto'], ['gym', 'Palestra'], ['pilates', 'Pilates']];
@@ -24,13 +25,13 @@ function dayCell({ year, month, day, info, today, selected, titles, onDay }) {
     kind === 'both' ? el('b', { text: String(day) }) : String(day));
 }
 
-function sessionCard(session, onOpen) {
+function sessionCard(session, onOpen, unit) {
   const pilates = session.mode === 'pilates';
   const summary = session.summary ?? {};
   const duration = formatDuration(session.endedAt - session.startedAt);
   const stats = pilates
     ? [['Durata', duration], ['Pratica', `${Math.round((session.endedAt - session.startedAt) / 60_000)} min`], ['Esercizi', String(summary.exercisesDone ?? 0)]]
-    : [['Durata', duration], ['Volume', `${thousands(summary.volume ?? 0)} kg`], ['Esercizi', String(summary.exercisesDone ?? 0)]];
+    : [['Durata', duration], ['Volume', `${thousands(displayNumber(summary.volume ?? 0, unit, { volume: true }))} ${unitLabel(unit)}`], ['Esercizi', String(summary.exercisesDone ?? 0)]];
   const record = summary.records?.[0];
   const milestone = summary.milestones?.[0];
   const more = (list) => (list?.length > 1 ? ` · +${list.length - 1}` : '');
@@ -41,11 +42,11 @@ function sessionCard(session, onOpen) {
       el('span', { text: timeOf(session.startedAt ?? session.endedAt) })),
     el('h3', { text: session.title }),
     el('div', { className: 'bg-dcard__stats' }, stats.map(([label, value]) => el('span', {}, label, el('b', { text: value })))),
-    !pilates && record ? el('span', { className: 'bg-chip' }, icon('trophy', { small: true }), `Record · ${record.title} · ${liftText(record.load, record.reps)}${more(summary.records)}`) : null,
+    !pilates && record ? el('span', { className: 'bg-chip' }, icon('trophy', { small: true }), `Record · ${record.title} · ${liftText(record.load, record.reps, unit)}${more(summary.records)}`) : null,
     pilates && milestone ? el('span', { className: 'bg-chip' }, icon('star', { small: true }), `Traguardo · ${milestone.title}${more(summary.milestones)}`) : null);
 }
 
-export function renderHistory(root, { year, month, day, filter, calendar, sessions, initial, onAccount, onFilter, onMonth, onDay, onOpen }) {
+export function renderHistory(root, { year, month, day, filter, calendar, sessions, initial, onAccount, onFilter, onMonth, onDay, onOpen, unit = 'kg' }) {
   const now = new Date();
   const isThisMonth = now.getFullYear() === year && now.getMonth() === month;
   const first = new Date(year, month, 1);
@@ -66,7 +67,7 @@ export function renderHistory(root, { year, month, day, filter, calendar, sessio
   const panel = sessions.length
     ? [
       el('div', { className: 'bg-dayhead' }, el('h2', { text: longDay(selectedDate) }), el('span', { text: `${count(sessions.length)}${isToday ? ' · oggi' : ''}` })),
-      el('div', { className: 'bg-daylist bg-focuslist' }, sessions.map((session) => sessionCard(session, onOpen))),
+      el('div', { className: 'bg-daylist bg-focuslist' }, sessions.map((session) => sessionCard(session, onOpen, unit))),
     ]
     : [
       el('div', { className: 'bg-dayhead' }, el('h2', { text: longDay(selectedDate) }), el('span', { text: isToday ? 'oggi' : 'riposo' })),

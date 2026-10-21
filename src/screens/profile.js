@@ -3,6 +3,7 @@ import { button, el, topBar } from '../ui/components.js';
 import { icon } from '../ui/icons.js';
 import { METRICS, chartModel, formatValue, parseMeasure } from '../measurements.js';
 import { ageFromBirthDate, birthDateProblem } from '../account-rules.js';
+import { displayNumber, fromInput, toDisplay, unitLabel } from '../units.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const svg = (tag, attributes, text) => {
@@ -86,7 +87,7 @@ function measureInput(metric, current) {
 
 export function renderProfile(root, props) {
   const {
-    alias, email, birthDate, measurements, status, canRunBench, privacy, onPrivacy,
+    alias, email, birthDate, measurements, status, canRunBench, privacy, onPrivacy, unit = 'kg',
     onBack, onChooseAlias, onSaveMeasure, onSaveBirthDate, onRetrySync, onExport, onImport, onBench, onDelete, onSignOut,
   } = props;
   const rerender = (focus) => {
@@ -95,17 +96,21 @@ export function renderProfile(root, props) {
   };
 
   const rows = (group) => METRICS.filter((metric) => metric.group === group).map((metric) => {
+    // Il peso si salva in kg: in lb si mostra e si legge convertito, gli altri dati no.
+    const isWeight = metric.id === 'peso';
+    const displayUnit = isWeight ? unitLabel(unit) : metric.unit;
     const history = measurements?.[metric.id];
-    const current = !measurements ? null : history.at(-1)?.value;
+    const shown = isWeight && history ? history.map((point) => ({ ...point, value: displayNumber(point.value, unit) })) : history;
+    const current = !measurements ? null : shown.at(-1)?.value;
     return metricRow({
-      ...metric, current, rerender,
-      input: measureInput(metric, current),
+      ...metric, unit: displayUnit, current, rerender,
+      input: measureInput({ ...metric, unit: displayUnit }, current),
       onSave: async (text) => {
-        const parsed = parseMeasure(text);
-        if (parsed === null) return `Scrivi un valore valido in ${metric.unit}, per esempio ${metric.unit === 'kg' ? '72,5' : '38'}.`;
-        return onSaveMeasure(metric.id, parsed);
+        const parsed = parseMeasure(text, isWeight ? toDisplay(1000, 'lb') : 1000);
+        if (parsed === null) return `Scrivi un valore valido in ${displayUnit}, per esempio ${displayUnit === 'kg' ? '72,5' : displayUnit === 'lb' ? '160' : '38'}.`;
+        return onSaveMeasure(metric.id, isWeight && unit === 'lb' ? fromInput(String(parsed), 'lb') : parsed);
       },
-      extra: metric.chart && measurements ? chart(metric, history) : null,
+      extra: metric.chart && measurements ? chart({ ...metric, unit: displayUnit }, shown) : null,
     });
   });
 

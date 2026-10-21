@@ -1,6 +1,9 @@
+import { LB_IN_KG, unitLabel } from './units.js';
+
 const SEX_VALUES = new Set(['male', 'female', 'other', 'prefer_not_to_say']);
 
-export function normalizeProfile(values, today = new Date().toISOString().slice(0, 10)) {
+// Il peso si salva sempre in kg; `unit` è l'unità in cui l'utente ha scritto il valore.
+export function normalizeProfile(values, today = new Date().toISOString().slice(0, 10), unit = 'kg') {
   const firstName = String(values.firstName ?? '').trim();
   const lastName = String(values.lastName ?? '').trim();
   const birthDate = String(values.birthDate ?? '').trim();
@@ -13,16 +16,18 @@ export function normalizeProfile(values, today = new Date().toISOString().slice(
     || birthDate < '1900-01-01' || birthDate > today)) {
     throw new Error('Inserisci una data di nascita valida, non futura.');
   }
-  const weight = weightRaw ? Number(weightRaw) : null;
-  if (weightRaw && (!Number.isFinite(weight) || weight <= 0 || weight > 1000 || Math.round(weight * 10) !== weight * 10)) {
-    throw new Error('Inserisci il peso in kg con al massimo una cifra decimale.');
+  const weight = weightRaw ? Number(weightRaw.replace(',', '.')) : null;
+  // Il limite resta 1000 kg, quindi in lb sono ~2204,6; una cifra decimale vale sul valore scritto.
+  const maxWeight = unit === 'lb' ? 1000 / LB_IN_KG : 1000;
+  if (weightRaw && (!Number.isFinite(weight) || weight <= 0 || weight > maxWeight || Math.round(weight * 10) !== weight * 10)) {
+    throw new Error(`Inserisci il peso in ${unitLabel(unit)} con al massimo una cifra decimale.`);
   }
   if (sex && !SEX_VALUES.has(sex)) throw new Error('Seleziona un valore valido per il sesso.');
   return {
     first_name: firstName || null,
     last_name: lastName || null,
     birth_date: birthDate || null,
-    weight_kg: weight,
+    weight_kg: weight === null ? null : (unit === 'lb' ? weight * LB_IN_KG : weight),
     sex: sex || null,
   };
 }

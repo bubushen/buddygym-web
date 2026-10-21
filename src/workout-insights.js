@@ -2,6 +2,7 @@
 // scheda «Prossima». Nessun dato nuovo: le sedute sono quelle salvate da
 // finishWorkoutSession (sessionId, startedAt, endedAt) per ogni esercizio.
 import { readExerciseHistory, sessionMetric } from './workout-history.js';
+import { displayNumber, toDisplay, unitLabel } from './units.js';
 
 export function workoutSessions(storage, workout) {
   const sessions = new Map();
@@ -58,10 +59,10 @@ export function targetLabel(exercise) {
 const formatNumber = (value) => value.toLocaleString('it-IT', { maximumFractionDigits: 2 });
 
 // «Scorsa volta: 100 kg»: il carico più alto (o i minuti) dell'ultima seduta salvata.
-export function lastTimeLabel(exercise, history) {
+export function lastTimeLabel(exercise, history, unit = 'kg') {
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const value = sessionMetric(exercise, history[index]);
-    if (value !== null) return `Scorsa volta: ${formatNumber(value)} ${exercise.mode === 'time' ? 'min' : 'kg'}`;
+    if (value !== null) return `Scorsa volta: ${exercise.mode === 'time' ? formatNumber(value) : formatNumber(displayNumber(value, unit))} ${exercise.mode === 'time' ? 'min' : unitLabel(unit)}`;
   }
   return history.length ? 'Scorsa volta: corpo libero' : 'Prima volta';
 }

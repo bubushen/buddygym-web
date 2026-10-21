@@ -16,11 +16,12 @@ export const formatValue = (value) => value.toLocaleString('it-IT', { maximumFra
 export const monthLabel = (date) => MONTHS[new Date(date).getMonth()];
 
 // «79,4» o «79.4» → 79.4; null se non è un valore valido (come nel database).
-export function parseMeasure(text) {
+// `max` è il limite nell'unità scritta: per il peso in lb diventa ~2204,6 (1000 kg).
+export function parseMeasure(text, max = 1000) {
   const clean = String(text ?? '').trim().replace(',', '.');
   if (!/^\d+(\.\d+)?$/.test(clean)) return null;
   const value = Math.round(Number(clean) * 10) / 10;
-  return value > 0 && value <= 1000 ? value : null;
+  return value > 0 && value <= max ? value : null;
 }
 
 // Disegno del grafico in coordinate SVG 300×84, come nel design system.

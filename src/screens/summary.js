@@ -3,6 +3,7 @@ import { el } from '../ui/components.js';
 import { icon } from '../ui/icons.js';
 import { formatDuration } from '../workout-summary.js';
 import { liftText } from '../records.js';
+import { displayNumber, toDisplay, unitLabel } from '../units.js';
 
 const thousands = (value) => {
   const [whole, decimals] = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2, useGrouping: false }).format(value).split(',');
@@ -39,10 +40,12 @@ function deltaBadge(delta, unit) {
   return el('span', { className: 'bg-delta' }, icon(delta > 0 ? 'arrowUp' : 'arrowDown', { small: true }), `${delta > 0 ? '+' : ''}${thousands(Math.abs(delta))} ${unit}`);
 }
 
-export function renderSummary(root, dock, { workout, summary, name, celebrate, date, published, onDone, onPublish }) {
+export function renderSummary(root, dock, { workout, summary, name, celebrate, date, published, onDone, onPublish, unit = 'kg' }) {
+  // I dati restano in kg: qui si convertono solo per mostrarli nell'unità scelta.
+  const weight = (value) => thousands(displayNumber(value, unit, { volume: true }));
   const allSets = summary.sets >= summary.planned;
   const stats = el('div', { className: 'bg-stats' },
-    el('div', { className: 'bg-stat' }, el('b', { text: thousands(summary.volume) }), el('span', { text: 'kg di volume' }),
+    el('div', { className: 'bg-stat' }, el('b', { text: weight(summary.volume) }), el('span', { text: `${unitLabel(unit)} di volume` }),
       summary.volumeChange !== null ? el('em', { text: `${summary.volumeChange > 0 ? '+' : summary.volumeChange < 0 ? '−' : ''}${Math.abs(summary.volumeChange)}%` }) : null),
     el('div', { className: 'bg-stat' }, el('b', { text: String(summary.sets) }), el('span', { text: 'serie' }),
       el('em', { text: allSets ? 'tutte fatte' : `di ${summary.planned} previste` })),
@@ -52,7 +55,7 @@ export function renderSummary(root, dock, { workout, summary, name, celebrate, d
   const shown = summary.records.slice(0, 3);
   const records = shown.map((record) => el('div', { className: 'bg-pr' },
     el('span', { className: 'bg-pr__ic' }, icon('trophy')),
-    el('span', {}, el('small', { text: 'Nuovo record' }), el('b', { text: `${record.title} · ${liftText(record.load, record.reps)}` }))));
+    el('span', {}, el('small', { text: 'Nuovo record' }), el('b', { text: `${record.title} · ${liftText(record.load, record.reps, unit)}` }))));
   const moreRecords = summary.records.length > 3 ? el('p', { className: 'bg-note bg-note--center', text: `e altri ${summary.records.length - 3}` }) : null;
 
   let comparison;
@@ -64,21 +67,26 @@ export function renderSummary(root, dock, { workout, summary, name, celebrate, d
       el('div', { className: 'bg-blocktitle bg-blocktitle--summary' }, el('h2', { text: `Rispetto a ${dayName(summary.previousEnd)}` })),
       el('div', { className: 'bg-cmp' },
         el('div', { className: 'bg-cmp__row' }, el('span', { text: shortDay(summary.previousEnd) }),
-          el('span', { className: 'bg-cmp__bar' }, el('i', { style: `width:${width(summary.previousVolume)}` })), el('b', { text: thousands(summary.previousVolume) })),
+          el('span', { className: 'bg-cmp__bar' }, el('i', { style: `width:${width(summary.previousVolume)}` })), el('b', { text: weight(summary.previousVolume) })),
         el('div', { className: 'bg-cmp__row bg-cmp__row--now' }, el('span', { text: 'Oggi' }),
-          el('span', { className: 'bg-cmp__bar' }, el('i', { style: `width:${width(summary.volume)}` })), el('b', { text: thousands(summary.volume) })),
-        el('span', { className: 'bg-cmp__note' }, 'Volume totale in kg · ',
-          el('b', { text: `${signed(difference)} kg${summary.volumeChange !== null ? ` (${summary.volumeChange > 0 ? '+' : summary.volumeChange < 0 ? '−' : ''}${Math.abs(summary.volumeChange)}%)` : ''}` }))),
+          el('span', { className: 'bg-cmp__bar' }, el('i', { style: `width:${width(summary.volume)}` })), el('b', { text: weight(summary.volume) })),
+        el('span', { className: 'bg-cmp__note' }, `Volume totale in ${unitLabel(unit)} · `,
+          el('b', { text: `${signed(displayNumber(difference, unit, { volume: true }))} ${unitLabel(unit)}${summary.volumeChange !== null ? ` (${summary.volumeChange > 0 ? '+' : summary.volumeChange < 0 ? '−' : ''}${Math.abs(summary.volumeChange)}%)` : ''}` }))),
     ];
   } else {
     comparison = [el('p', { className: 'bg-empty bg-empty--spaced', text: 'Prima volta con questa scheda: la prossima volta vedrai il confronto.' })];
   }
 
-  const rows = summary.exercises.map((item) => el('div', { className: 'bg-exrow' },
-    el('span', { className: 'bg-exrow__body' },
-      el('span', { className: 'bg-exrow__name', text: item.title }),
-      el('span', { className: 'bg-exrow__meta', text: item.value === null ? 'non svolto' : `${item.unit === 'min' ? 'tempo massimo' : 'carico massimo'} ${thousands(item.value)} ${item.unit}` })),
-    item.value === null ? null : deltaBadge(item.delta, item.unit)));
+  const rows = summary.exercises.map((item) => {
+    const timed = item.unit === 'min';
+    const shown = timed ? item.value : displayNumber(item.value, unit);
+    const shownUnit = timed ? 'min' : unitLabel(unit);
+    return el('div', { className: 'bg-exrow' },
+      el('span', { className: 'bg-exrow__body' },
+        el('span', { className: 'bg-exrow__name', text: item.title }),
+        el('span', { className: 'bg-exrow__meta', text: item.value === null ? 'non svolto' : `${timed ? 'tempo massimo' : 'carico massimo'} ${thousands(shown)} ${shownUnit}` })),
+      item.value === null ? null : deltaBadge(item.delta === null ? null : (timed ? item.delta : displayNumber(item.delta, unit)), shownUnit));
+  });
 
   root.replaceChildren(
     celebrate ? confetti() : '',

@@ -8,7 +8,7 @@
 // - 0 kg scritto esplicitamente = corpo libero: valgono i record di ripetizioni.
 // Il confronto è serie per serie: se la serie 3 batte di nuovo la serie 2, è un altro record.
 import { readExerciseHistory } from './workout-history.js';
-import { thousands } from './format.js';
+import { formatWeight } from './units.js';
 
 const num = (value) => Number(String(value ?? '').replace(',', '.'));
 
@@ -24,8 +24,8 @@ export const liftedRows = (rows) => rows
   .map((row) => ({ load: num(row.load), reps: num(row.reps) }))
   .filter((row) => row.load >= 0 && row.reps > 0 && Number.isFinite(row.load) && Number.isFinite(row.reps));
 
-// «100 kg × 5», «Corpo libero × 12».
-export const liftText = (load, reps) => (Number(load) === 0 ? `Corpo libero × ${reps}` : `${thousands(Number(load))} kg × ${reps}`);
+// «100 kg × 5», «220,5 lb × 5», «Corpo libero × 12». L'unità riguarda solo il testo.
+export const liftText = (load, reps, unit = 'kg') => (Number(load) === 0 ? `Corpo libero × ${reps}` : `${formatWeight(Number(load), unit)} × ${reps}`);
 
 // Tutte le sedute finite di un esercizio, da ogni scheda in cui compare con lo stesso nome.
 export function exerciseEntries(storage, workouts, title) {

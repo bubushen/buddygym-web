@@ -3,7 +3,7 @@
 import { button, el, link, openSheet, textField, topBar } from '../ui/components.js';
 import { icon } from '../ui/icons.js';
 import { passwordProblem } from '../account-rules.js';
-import { ADD_ME, PAUSE_CHOICES, REST_CHOICES, THEMES } from '../settings.js';
+import { ADD_ME, PAUSE_CHOICES, REST_CHOICES, THEMES, UNITS } from '../settings.js';
 
 function hero(name, title, text, { danger = false } = {}) {
   return el('div', { className: 'bg-center' },
@@ -125,7 +125,7 @@ export function renderSettings(root, props) {
     ]
     : [
       row({ label: 'Modalità', value: 'Palestra', onClick: modeLocked ? null : () => choiceSheet('Modalità', [['gym', 'Palestra'], ['pilates', 'Pilates']], mode, onMode), hint: modeLocked ? 'Termina l\'allenamento in corso per cambiare' : null }),
-      row({ label: 'Unità di peso', value: 'kg', hint: 'Libbre in arrivo', chevron: false }),
+      row({ label: 'Unità di peso', value: UNITS[settings.unit], onClick: () => choiceSheet('Unità di peso', Object.entries(UNITS), settings.unit, (value) => set('unit', value)) }),
       row({ label: 'Recupero predefinito', value: seconds(settings.restDefault), onClick: () => choiceSheet('Recupero predefinito', REST_CHOICES.map((value) => [value, seconds(value)]), settings.restDefault, (value) => set('restDefault', value)) }),
       toggle({ label: 'Suggerimenti di progressione', checked: settings.progression, onChange: (value) => { onSetting('progression', value); } }),
     ];
@@ -148,7 +148,7 @@ export function renderSettings(root, props) {
         el('h2', { className: 'bg-section', text: 'Privacy' }),
         el('div', { className: 'bg-set-list' },
           toggle({ label: 'Mostra le statistiche agli amici', hint: pilates ? 'Sessioni e minuti di pratica' : 'Allenamenti e tempo in palestra', checked: privacy.shareStats, onChange: (value) => onPrivacy('shareStats', value) }),
-          pilates ? null : toggle({ label: 'Mostra i carichi agli amici', hint: 'Volume, kg e record', checked: privacy.shareLoads, onChange: (value) => onPrivacy('shareLoads', value) }),
+          pilates ? null : toggle({ label: 'Mostra i carichi agli amici', hint: 'Volume, carichi e record', checked: privacy.shareLoads, onChange: (value) => onPrivacy('shareLoads', value) }),
           row({ label: 'Chi può aggiungermi', value: ADD_ME[settings.addMe], onClick: () => choiceSheet('Chi può aggiungermi', Object.entries(ADD_ME), settings.addMe, (value) => set('addMe', value)) })),
         el('p', { className: 'bg-section__note bg-section__note--after', text: 'Le misure corporee non sono mai visibili agli altri.' }),
       ] : null,

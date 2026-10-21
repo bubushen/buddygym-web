@@ -21,7 +21,7 @@ function exerciseRow({ exercise, index, meta, state, onOpen }) {
 
 // PilatesSessionScreen: stessa struttura, con durata, attrezzo e livello al posto di
 // serie × ripetizioni; `progress` dice quali esercizi sono fatti e quale è in corso.
-export function renderWorkoutScreen(root, dock, { workout, storage, active, editable, pilatesProgress, onBack, onOpenExercise, onStart, onStop, onEdit, onAddExercise, onMenu }) {
+export function renderWorkoutScreen(root, dock, { workout, storage, active, editable, pilatesProgress, onBack, onOpenExercise, onStart, onStop, onEdit, onAddExercise, onMenu, unit = 'kg' }) {
   const exercises = workout.exercises;
   const pilates = workout.mode === 'pilates';
   let head;
@@ -48,14 +48,14 @@ export function renderWorkoutScreen(root, dock, { workout, storage, active, edit
       const { done, total, complete } = progress[index];
       const meta = complete ? `Fatto · ${done} serie`
         : done ? `In corso · serie ${done + 1} di ${total}`
-          : lastTimeLabel(exercise, readExerciseHistory(storage, workout.id, exercise.id));
+          : lastTimeLabel(exercise, readExerciseHistory(storage, workout.id, exercise.id), unit);
       return exerciseRow({ exercise, index, meta, state: complete ? 'done' : done ? 'current' : '', onOpen: () => onOpenExercise(exercise) });
     });
   } else {
     head = pageHead({ title: workout.title });
     head.classList.add('bg-pagehead--tight');
     rows = exercises.map((exercise, index) => exerciseRow({
-      exercise, index, meta: lastTimeLabel(exercise, readExerciseHistory(storage, workout.id, exercise.id)), onOpen: () => onOpenExercise(exercise),
+      exercise, index, meta: lastTimeLabel(exercise, readExerciseHistory(storage, workout.id, exercise.id), unit), onOpen: () => onOpenExercise(exercise),
     }));
   }
 

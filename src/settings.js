@@ -8,11 +8,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
   notifySocial: true,
   theme: 'system',
   addMe: 'all',
+  unit: 'kg',
 });
 export const REST_CHOICES = [60, 90, 120, 150, 180];
 export const PAUSE_CHOICES = [10, 15, 20, 30, 45];
 export const ADD_ME = { all: 'Tutti', fof: 'Amici di amici', none: 'Nessuno' };
 export const THEMES = { light: 'Chiaro', dark: 'Scuro', system: 'Sistema' };
+export const UNITS = { kg: 'Chilogrammi (kg)', lb: 'Libbre (lb)' };
 
 // Solo valori validi; il resto torna al predefinito.
 export function cleanSettings(value = {}) {
@@ -23,6 +25,7 @@ export function cleanSettings(value = {}) {
   if (PAUSE_CHOICES.includes(value.pauseDefault)) out.pauseDefault = value.pauseDefault;
   if (value.theme in THEMES) out.theme = value.theme;
   if (value.addMe in ADD_ME) out.addMe = value.addMe;
+  if (value.unit in UNITS) out.unit = value.unit;
   return out;
 }
 
