@@ -241,6 +241,48 @@
   --type-datebtn: 500 16px/1 var(--font-sans);
   --authdock-bottom: max(28px, env(safe-area-inset-bottom));
   --type-authdock: 500 13px/18px var(--font-sans);
+  /* Movimento (motion.md) */
+  --dur-fast: 150ms;
+  --dur-base: 250ms;
+  --dur-slow: 400ms;
+  --dur-party: 900ms;
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  /* Massimale (PersonalBest) */
+  --pb-ic: 44px;
+  --pb-date-col: 58px;
+  --pb-row-pad-y: 12px;
+  --type-pb-label: 700 11px/14px var(--font-sans);
+  --track-pb-label: .08em;
+  --type-pb-val: 800 22px/26px var(--font-display);
+  --type-pb-meta: 500 12px/16px var(--font-sans);
+  --pb-all-h: 20px;
+  --type-pb-all: 700 11px/1 var(--font-sans);
+  --type-pb-date: 600 12px/16px var(--font-sans);
+  --type-pb-what: 700 15px/20px var(--font-sans);
+  --type-pb-kind: 600 11px/14px var(--font-sans);
+  --track-pb-kind: .04em;
+  --type-pb-delta: 800 14px/1 var(--font-display);
+  --type-pb-empty: 500 14px/20px var(--font-sans);
+  /* Festa del nuovo record (RecordCelebration) */
+  --pr-badge-left: 52px;
+  --pr-badge-top: -32px;
+  --pr-badge-h: 26px;
+  --type-pr-badge: 800 12px/1 var(--font-sans);
+  --pr-badge-icon: 14px;
+  --pr-plus-right: 70px;
+  --pr-plus-top: -26px;
+  --type-pr-plus: 800 20px/1 var(--font-display);
+  --pr-burst-right: 24px;
+  --pr-burst-top: 24px;
+  --pr-disc: 12px;
+  --pr-flash: 1.4s;
+  --pr-badge-time: 2.6s;
+  --pr-plus-time: 1.3s;
+  --pr-toast-gap: 8px;
+  --pr-toast-ic: 36px;
+  --type-pr-toast: 800 15px/20px var(--font-display);
+  --type-pr-toast-sub: 500 12px/16px var(--font-sans);
   /* Riepilogo di fine allenamento e coriandoli */
   --badge-xl: 72px;
   --badge-xl-icon: 36px;

@@ -714,3 +714,52 @@ button.bg-rank { cursor: pointer; }
 .bg-datebtn input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; opacity: 0; cursor: pointer; }
 .bg-datefield .bg-field__help { display: flex; margin-top: var(--space-2); }
 .bg-authdock { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--authdock-bottom); background: var(--surface); text-align: center; font: var(--type-authdock); color: var(--ink-muted); }
+
+/* ——— Massimale della pagina esercizio (PersonalBest) ——— */
+.bg-pb { margin: 0 var(--space-4); border-radius: var(--radius-lg); background: var(--surface-raised); border: var(--border-thin) solid var(--line); overflow: hidden; }
+.bg-pb__now { display: grid; grid-template-columns: var(--pb-ic) 1fr; gap: var(--space-3); align-items: center; padding: var(--space-4); background: var(--surface-sunken); }
+.bg-pb__ic { width: var(--pb-ic); height: var(--pb-ic); border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); }
+.bg-pb__label { display: block; font: var(--type-pb-label); letter-spacing: var(--track-pb-label); text-transform: uppercase; color: var(--ink-muted); }
+.bg-pb__val { display: block; margin-top: 2px; font: var(--type-pb-val); font-variant-numeric: tabular-nums; color: var(--ink); }
+.bg-pb__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--modeseg-gap); margin-top: var(--space-1); font: var(--type-pb-meta); color: var(--ink-muted); }
+.bg-pb__all { display: inline-flex; align-items: center; height: var(--pb-all-h); padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--on-accent-soft); font: var(--type-pb-all); }
+.bg-pb__list { list-style: none; margin: 0; padding: 0; }
+.bg-pb__row { display: grid; grid-template-columns: var(--pb-date-col) 1fr auto; align-items: center; gap: var(--space-3); padding: var(--pb-row-pad-y) var(--space-4); border-top: var(--border-thin) solid var(--line); }
+.bg-pb__date { font: var(--type-pb-date); color: var(--ink-muted); }
+.bg-pb__what b { display: block; font: var(--type-pb-what); font-variant-numeric: tabular-nums; color: var(--ink); }
+.bg-pb__what span { font: var(--type-pb-kind); letter-spacing: var(--track-pb-kind); text-transform: uppercase; color: var(--accent); }
+.bg-pb__delta { font: var(--type-pb-delta); white-space: nowrap; color: var(--ink); }
+.bg-pb__row--start .bg-pb__what span, .bg-pb__row--start .bg-pb__what b, .bg-pb__row--start .bg-pb__delta { color: var(--ink-muted); }
+.bg-pb__empty { padding: var(--space-4); font: var(--type-pb-empty); color: var(--ink-muted); display: flex; gap: var(--space-3); align-items: flex-start; }
+.bg-pb__empty b { color: var(--ink); }
+.bg-pb__empty .bg-icon { color: var(--accent); flex: none; margin-top: 1px; }
+
+/* ——— Festa del nuovo record (RecordCelebration) ——— */
+.bg-set { position: relative; }
+.bg-set--pr .bg-set__in { animation: bg-flash var(--pr-flash) var(--ease-out) both; }
+.bg-set--pr .bg-set__ok { animation: bg-pop 500ms var(--ease-spring) both; }
+@keyframes bg-flash { 0%, 70% { background: var(--highlight); color: var(--on-highlight); border-color: transparent; } 100% { background: var(--surface-raised); } }
+@keyframes bg-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.bg-prbadge { position: absolute; left: var(--pr-badge-left); top: var(--pr-badge-top); display: inline-flex; align-items: center; gap: var(--modeseg-gap); height: var(--pr-badge-h); padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--highlight); color: var(--on-highlight); font: var(--type-pr-badge); white-space: nowrap; opacity: 0; pointer-events: none; }
+.bg-prbadge .bg-icon { width: var(--pr-badge-icon); height: var(--pr-badge-icon); }
+.bg-set--pr .bg-prbadge { animation: bg-badge var(--pr-badge-time) var(--ease-spring) both; }
+@keyframes bg-badge { 0% { opacity: 0; transform: translateY(10px) scale(.6); } 15% { opacity: 1; transform: translateY(0) scale(1.08); } 25% { transform: scale(1); } 80% { opacity: 1; transform: translateY(-4px); } 100% { opacity: 0; transform: translateY(-14px); } }
+.bg-plus { position: absolute; right: var(--pr-plus-right); top: var(--pr-plus-top); font: var(--type-pr-plus); color: var(--accent); opacity: 0; pointer-events: none; white-space: nowrap; }
+.bg-set--pr .bg-plus { animation: bg-rise var(--pr-plus-time) var(--ease-out) var(--dur-fast) both; }
+@keyframes bg-rise { 0% { opacity: 0; transform: translateY(6px); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-44px); } }
+.bg-prburst { position: absolute; right: var(--pr-burst-right); top: var(--pr-burst-top); width: 0; height: 0; pointer-events: none; }
+.bg-prburst i { position: absolute; left: calc(var(--pr-disc) / -2); top: calc(var(--pr-disc) / -2); width: var(--pr-disc); height: var(--pr-disc); border-radius: 50%; opacity: 0; }
+.bg-prburst i:nth-child(3n) { width: 8px; height: 16px; border-radius: 2px; }
+.bg-set--pr .bg-prburst i { animation: bg-shoot 800ms var(--ease-out) both; }
+@keyframes bg-shoot { 0% { opacity: 1; transform: translate(0, 0) scale(.4) rotate(0); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(var(--r, 180deg)); } }
+#timerSlot { position: relative; }
+.bg-prtoast { position: absolute; left: var(--space-4); right: var(--space-4); top: calc(100% + var(--pr-toast-gap)); z-index: 9; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 0; border-radius: var(--radius-lg); background: var(--ink); color: var(--surface); text-align: left; cursor: pointer; transform: translateY(-140%); opacity: 0; transition: transform var(--dur-slow) var(--ease-spring), opacity var(--dur-base) var(--ease-out); }
+.bg-prtoast.is-on { transform: none; opacity: 1; }
+.bg-prtoast__ic { width: var(--pr-toast-ic); height: var(--pr-toast-ic); flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); }
+.bg-prtoast b { display: block; font: var(--type-pr-toast); }
+.bg-prtoast small { display: block; font: var(--type-pr-toast-sub); opacity: .8; }
+@media (prefers-reduced-motion: reduce) {
+  .bg-set--pr .bg-set__in, .bg-set--pr .bg-set__ok, .bg-set--pr .bg-plus, .bg-set--pr .bg-prburst i { animation: none; }
+  .bg-set--pr .bg-prbadge { animation: none; opacity: 1; }
+  .bg-prtoast { transition: opacity var(--dur-base) linear; transform: none; }
+}

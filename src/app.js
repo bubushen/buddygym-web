@@ -29,7 +29,7 @@ import * as social from './social.js';
 import { openEndWorkoutSheet } from './screens/end-workout.js';
 import { withScreenOn } from './screen-awake.js';
 import * as pilates from './pilates.js';
-import { exerciseEntries, exerciseKey, recordTimeline } from './records.js';
+import { exerciseEntries, exerciseKey, judgeSet, recordTimeline } from './records.js';
 import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
@@ -2089,8 +2089,8 @@ function renderHistory(workout, exercise) {
   renderRecords(exercise);
 }
 
-// Storico dei massimali: massimale attuale e ogni volta che è stato superato (carico o
-// ripetizioni), contando lo stesso esercizio in tutte le schede.
+// Massimale (PersonalBest): massimale attuale, record dal più recente e punto di partenza,
+// contando lo stesso esercizio in tutte le schede (stesso nome).
 function renderRecords(exercise) {
   const section = document.querySelector('#recordsSection');
   section.hidden = exercise.mode !== 'reps';
@@ -2098,32 +2098,30 @@ function renderRecords(exercise) {
   const { start, events, top } = recordTimeline(exerciseEntries(storage, workouts, exercise.title));
   const lift = (load, reps) => `${formatThousands(load)} kg × ${reps}`;
   const day = (time) => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(time);
-  const shared = workouts.filter((item) => item.mode !== 'pilates' && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === exerciseKey(exercise.title))).length > 1;
+  const key = exerciseKey(exercise.title);
+  const shared = workouts.filter((item) => item.mode !== 'pilates' && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === key)).length > 1;
+  const title = el('div', { className: 'bg-blocktitle' }, el('h2', { text: 'Massimale' }));
   if (!start) {
-    section.replaceChildren(
-      el('div', { className: 'bg-blocktitle' }, el('h2', { text: 'Massimale' })),
-      emptyState('Il primo allenamento con questo esercizio sarà il punto di partenza dei tuoi record.'));
+    section.replaceChildren(title, el('section', { className: 'bg-pb', 'aria-label': 'Massimale' },
+      el('div', { className: 'bg-pb__empty' }, icon('flag', { small: true }),
+        el('span', {}, 'Non hai ancora allenamenti con questo esercizio. Il primo sarà il tuo ', el('b', { text: 'punto di partenza' }), ': i record si contano da lì.'))));
     return;
   }
-  const rows = [...events].reverse().slice(0, 8).map((event) => el('div', { className: 'bg-exrow' },
-    el('span', { className: 'bg-exrow__num' }, icon('trophy', { small: true })),
-    el('span', { className: 'bg-exrow__body' },
-      el('span', { className: 'bg-exrow__name', text: lift(event.load, event.reps) }),
-      el('span', { className: 'bg-exrow__meta', text: `${day(event.at)} · ${event.kind === 'load' ? 'record di carico' : 'record di ripetizioni'}` })),
-    el('span', { className: 'bg-delta' }, icon('arrowUp', { small: true }), event.kind === 'load' ? `${formatThousands(event.gain)} kg` : `${event.gain} rip.`)));
-  rows.push(el('div', { className: 'bg-exrow' },
-    el('span', { className: 'bg-exrow__num', text: '—' }),
-    el('span', { className: 'bg-exrow__body' },
-      el('span', { className: 'bg-exrow__name', text: lift(start.load, start.reps) }),
-      el('span', { className: 'bg-exrow__meta', text: `${day(start.at)} · punto di partenza` }))));
-  section.replaceChildren(
-    el('div', { className: 'bg-blocktitle' }, el('h2', { text: 'Massimale' }), shared ? el('span', { text: 'da tutte le schede' }) : null),
-    el('div', { className: 'bg-pr' },
-      el('span', { className: 'bg-pr__ic' }, icon('trophy')),
-      el('span', {}, el('small', { text: top.at ? `Massimale attuale · ${day(top.at)}` : 'Massimale attuale' }), el('b', { text: lift(top.load, top.reps) }))),
-    el('div', { className: 'bg-blocktitle bg-blocktitle--rows' }, el('h2', { text: 'Record' }), el('span', { text: events.length ? `${events.length} ${events.length === 1 ? 'record' : 'record'}` : 'nessuno ancora' })),
-    el('div', { className: 'bg-exlist' }, rows),
-    el('p', { className: 'bg-note bg-note--inset', text: 'Record: più kg di sempre, oppure più ripetizioni di sempre a un carico già fatto.' }));
+  const row = (date, kind, value, delta, extra = '') => el('li', { className: `bg-pb__row${extra}` },
+    el('span', { className: 'bg-pb__date', text: date }),
+    el('span', { className: 'bg-pb__what' }, el('span', { text: kind }), el('b', { text: value })),
+    el('span', { className: 'bg-pb__delta' }, delta));
+  section.replaceChildren(title, el('section', { className: 'bg-pb', 'aria-label': 'Massimale' },
+    el('div', { className: 'bg-pb__now' },
+      el('span', { className: 'bg-pb__ic' }, icon('trophy')),
+      el('span', {},
+        el('span', { className: 'bg-pb__label', text: 'Massimale attuale' }),
+        el('span', { className: 'bg-pb__val', text: lift(top.load, top.reps) }),
+        el('span', { className: 'bg-pb__meta' }, day(top.at), shared ? el('span', { className: 'bg-pb__all', text: 'da tutte le schede' }) : null))),
+    el('ol', { className: 'bg-pb__list' },
+      [...events].reverse().map((event) => row(day(event.at), event.kind === 'load' ? 'Carico' : 'Ripetizioni', lift(event.load, event.reps),
+        event.kind === 'load' ? `↑ ${formatThousands(event.gain)} kg` : `↑ ${event.gain} rip.`)),
+      row(day(start.at), 'Punto di partenza', lift(start.load, start.reps), icon('flag', { small: true }), ' bg-pb__row--start'))));
 }
 
 document.querySelector('#toggleProgressButton').addEventListener('click', () => {
@@ -2136,6 +2134,43 @@ document.querySelector('#toggleProgressButton').addEventListener('click', () => 
 
 // Le tue serie: ripetizioni, carico e spunta. I campi vuoti suggeriscono i valori
 // della scorsa volta; la spunta senza valori li conferma.
+// RecordCelebration: spunta che rimbalza, campi accesi, 12 dischetti, «+5 kg» che sale,
+// badge «Record» e avviso sotto il cronometro. Non blocca nulla: il recupero parte comunque.
+const BURST = [[-67, -22, 0], [-74, -54, 47], [-67, -92, 94], [-22, -67, 141], [0, -92, 188], [35, -108, 235], [41, -57, 282], [74, -54, 329], [108, -35, 16], [70, 0, 63], [87, 28, 110], [92, 67, 157]];
+let recordTimers = [];
+function celebrateRecord(line, exercise, record) {
+  const gain = record.kind === 'load' ? `+${formatThousands(record.gain)} kg` : `+${record.gain} rip.`;
+  line.querySelectorAll('.bg-prbadge, .bg-plus, .bg-prburst').forEach((node) => node.remove());
+  line.classList.remove('bg-set--pr');
+  void line.offsetWidth;
+  line.append(
+    el('span', { className: 'bg-prbadge', 'aria-hidden': 'true' }, icon('trophy'), 'Record'),
+    el('span', { className: 'bg-plus', 'aria-hidden': 'true', text: gain }),
+    el('span', { className: 'bg-prburst', 'aria-hidden': 'true' }, BURST.map(([dx, dy, r], index) => el('i', {
+      style: `--dx:${dx}px;--dy:${dy}px;--r:${r}deg;background:var(--confetti-${(index % 4) + 1});animation-delay:${(index % 4) * 20}ms`,
+    }))));
+  line.classList.add('bg-set--pr');
+  // Vibrazione «success» anche con «Riduci movimento».
+  const haptics = globalThis.Capacitor?.Plugins?.Haptics;
+  if (haptics?.notification) haptics.notification({ type: 'SUCCESS' }).catch(() => {});
+  else navigator.vibrate?.(40);
+  recordTimers.forEach(clearTimeout);
+  const detail = `${exercise.title} · ${formatThousands(record.load)} kg × ${record.reps} · ${record.kind === 'load' ? `${gain} sul precedente` : `${gain} a questo carico`}`;
+  const slot = document.querySelector('#timerSlot');
+  slot.querySelector('.bg-prtoast')?.remove();
+  const toastNode = el('button', { type: 'button', className: 'bg-prtoast', role: 'status', 'aria-live': 'polite', 'aria-label': `Nuovo record. ${detail}. Tocca per chiudere` },
+    el('span', { className: 'bg-prtoast__ic' }, icon('trophy')),
+    el('span', {}, el('b', { text: 'Nuovo record' }), el('small', { text: detail })));
+  const close = () => { toastNode.classList.remove('is-on'); setTimeout(() => toastNode.remove(), 400); };
+  toastNode.addEventListener('click', close);
+  slot.append(toastNode);
+  recordTimers = [
+    setTimeout(() => toastNode.classList.add('is-on'), 250),
+    setTimeout(close, 2750),
+    setTimeout(() => { line.classList.remove('bg-set--pr'); line.querySelectorAll('.bg-prbadge, .bg-plus, .bg-prburst').forEach((node) => node.remove()); }, 2700),
+  ];
+}
+
 function renderSetRows(workout, exercise) {
   const key = exerciseLogKey(workout.id, exercise.id);
   const timed = exercise.mode === 'time';
@@ -2204,6 +2239,11 @@ function renderSetRows(workout, exercise) {
       tick.setAttribute('aria-label', row.done ? `Serie ${index + 1} completata` : `Segna serie ${index + 1} completata`);
       save();
       refreshHints();
+      // Serie record (carico o ripetizioni, regole di PersonalBest): parte la festa.
+      if (row.done && exercise.mode === 'reps' && activeWorkout?.workoutId === workout.id) {
+        const record = judgeSet(exerciseEntries(storage, workouts, exercise.title), values.filter((item, other) => item.done && other !== index), row);
+        if (record) celebrateRecord(line, exercise, record);
+      }
       // Serie confermata: parte il recupero, tranne dopo l'ultima serie dell'esercizio.
       const next = row.done ? nextOpenSet(values, index) : null;
       if (next !== null && activeWorkout?.workoutId === workout.id) startRest(workout, exercise, next, nextSetDetail(next));
