@@ -4,9 +4,11 @@
 // - una serie record sia di carico sia di ripetizioni conta come record di carico;
 // - il primo allenamento con l'esercizio è il punto di partenza (la sua prima serie
 //   completa), non un record; le serie senza kg o senza ripetizioni non contano;
-// - un solo storico per nome: maiuscole, spazi in più e accenti non contano.
+// - un solo storico per nome: maiuscole, spazi in più e accenti non contano;
+// - 0 kg scritto esplicitamente = corpo libero: valgono i record di ripetizioni.
 // Il confronto è serie per serie: se la serie 3 batte di nuovo la serie 2, è un altro record.
 import { readExerciseHistory } from './workout-history.js';
+import { thousands } from './format.js';
 
 const num = (value) => Number(String(value ?? '').replace(',', '.'));
 
@@ -14,10 +16,16 @@ export function exerciseKey(title) {
   return String(title ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-// Serie complete, nell'ordine in cui sono state fatte.
+// Serie complete, nell'ordine in cui sono state fatte. Carico vuoto = serie incompleta;
+// carico 0 = corpo libero (trazioni, dip senza zavorra).
+const filled = (value) => value !== '' && value != null && String(value).trim() !== '';
 export const liftedRows = (rows) => rows
+  .filter((row) => row && filled(row.load) && filled(row.reps))
   .map((row) => ({ load: num(row.load), reps: num(row.reps) }))
-  .filter((row) => row.load > 0 && row.reps > 0 && Number.isFinite(row.load) && Number.isFinite(row.reps));
+  .filter((row) => row.load >= 0 && row.reps > 0 && Number.isFinite(row.load) && Number.isFinite(row.reps));
+
+// «100 kg × 5», «Corpo libero × 12».
+export const liftText = (load, reps) => (Number(load) === 0 ? `Corpo libero × ${reps}` : `${thousands(Number(load))} kg × ${reps}`);
 
 // Tutte le sedute finite di un esercizio, da ogni scheda in cui compare con lo stesso nome.
 export function exerciseEntries(storage, workouts, title) {
@@ -31,12 +39,12 @@ export function exerciseEntries(storage, workouts, title) {
 }
 
 function createState() {
-  return { maxLoad: 0, repsAt: new Map() };
+  return { maxLoad: -1, repsAt: new Map() };
 }
 
 // Record della serie rispetto a tutto ciò che c'era prima (null se non lo è).
 function judge(state, row) {
-  if (row.load > state.maxLoad) return { kind: 'load', gain: Math.round((row.load - state.maxLoad) * 100) / 100 };
+  if (state.maxLoad >= 0 && row.load > state.maxLoad) return { kind: 'load', gain: Math.round((row.load - state.maxLoad) * 100) / 100 };
   const best = state.repsAt.get(row.load);
   if (best !== undefined && row.reps > best) return { kind: 'reps', gain: row.reps - best };
   return null;
@@ -84,4 +92,17 @@ export function judgeSet(entries, earlier, row) {
   for (const item of liftedRows(earlier)) remember(state, item);
   const record = judge(state, current);
   return record ? { ...record, load: current.load, reps: current.reps } : null;
+}
+
+// Nomi già usati negli esercizi della modalità (Palestra o Pilates), una volta sola per nome
+// normalizzato e in ordine alfabetico: si suggeriscono mentre si scrive un nuovo esercizio,
+// così lo stesso esercizio non finisce in storici separati per un errore di battitura.
+export function usedExerciseNames(workouts, { pilates = false, extra = [] } = {}) {
+  const names = new Map();
+  for (const exercise of [...workouts.flatMap((workout) => workout.exercises), ...extra]) {
+    if ((exercise.mode === 'pilates') !== pilates) continue;
+    const key = exerciseKey(exercise.title);
+    if (key && !names.has(key)) names.set(key, exercise.title.trim().replace(/\s+/g, ' '));
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b, 'it'));
 }

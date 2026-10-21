@@ -2,6 +2,7 @@
 import { el } from '../ui/components.js';
 import { icon } from '../ui/icons.js';
 import { formatDuration } from '../workout-summary.js';
+import { liftText } from '../records.js';
 
 const thousands = (value) => {
   const [whole, decimals] = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1, useGrouping: false }).format(value).split(',');
@@ -51,7 +52,7 @@ export function renderSummary(root, dock, { workout, summary, name, celebrate, d
   const shown = summary.records.slice(0, 3);
   const records = shown.map((record) => el('div', { className: 'bg-pr' },
     el('span', { className: 'bg-pr__ic' }, icon('trophy')),
-    el('span', {}, el('small', { text: 'Nuovo record' }), el('b', { text: `${record.title} · ${thousands(record.load)} kg × ${record.reps}` }))));
+    el('span', {}, el('small', { text: 'Nuovo record' }), el('b', { text: `${record.title} · ${liftText(record.load, record.reps)}` }))));
   const moreRecords = summary.records.length > 3 ? el('p', { className: 'bg-note bg-note--center', text: `e altri ${summary.records.length - 3}` }) : null;
 
   let comparison;

@@ -22,8 +22,10 @@ export function levelBars(level) {
 }
 
 // ——— Nuovo esercizio ———————————————————————————————————————————————————————————
-export function renderPilatesExerciseForm(root, dock, { workoutTitle, exercise, referenceName, onBack, onSave }) {
-  const name = el('input', { id: 'pilatesName', className: 'bg-input', placeholder: 'Es. The Hundred, Roll Up', maxlength: 60, autocomplete: 'off', value: exercise?.title ?? null });
+export function renderPilatesExerciseForm(root, dock, { workoutTitle, exercise, referenceName, names = [], onBack, onSave }) {
+  // Nomi già usati suggeriti mentre si scrive (stesso esercizio = stesso storico).
+  const suggestions = el('datalist', { id: 'pilatesNames' }, names.map((value) => el('option', { value })));
+  const name = el('input', { id: 'pilatesName', className: 'bg-input', placeholder: 'Es. The Hundred, Roll Up', maxlength: 60, autocomplete: 'off', list: 'pilatesNames', value: exercise?.title ?? null });
   // Durata a passi di 15 s (min:sec); pausa a passi di 5 s.
   const duration = stepper({
     id: 'pilatesDuration', label: 'Durata', unit: 'min', value: clockText(exercise?.seconds ?? 180),
@@ -90,7 +92,7 @@ export function renderPilatesExerciseForm(root, dock, { workoutTitle, exercise, 
         el('p', { className: 'bg-exhead__over', text: 'Esercizio' }),
         el('h1', { text: exercise ? 'Modifica esercizio' : 'Nuovo esercizio' }),
         el('p', { className: 'bg-exhead__lead', text: 'Gli esercizi Pilates sono a tempo.' })),
-      el('div', { className: 'bg-fgroup' }, el('label', { className: 'bg-flabel', for: 'pilatesName', text: 'Nome esercizio' }), name),
+      el('div', { className: 'bg-fgroup' }, el('label', { className: 'bg-flabel', for: 'pilatesName', text: 'Nome esercizio' }), name, suggestions),
       el('div', { className: 'bg-fgroup' }, el('div', { className: 'bg-pair2' },
         el('div', {}, el('label', { className: 'bg-flabel', for: 'pilatesDuration', text: 'Durata' }), duration.box),
         el('div', {}, el('label', { className: 'bg-flabel', for: 'pilatesPause', text: 'Pausa dopo' }), pause.box))),

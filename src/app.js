@@ -29,7 +29,7 @@ import * as social from './social.js';
 import { openEndWorkoutSheet } from './screens/end-workout.js';
 import { withScreenOn } from './screen-awake.js';
 import * as pilates from './pilates.js';
-import { exerciseEntries, exerciseKey, judgeSet, recordTimeline } from './records.js';
+import { exerciseEntries, exerciseKey, judgeSet, liftText, recordTimeline, usedExerciseNames } from './records.js';
 import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
@@ -1887,6 +1887,7 @@ function renderAnyExerciseForm(workout, exercise, inDraft = false) {
   const backRoute = inDraft ? draftRoute() : `#/scheda/${workout.id}`;
   renderPilatesExerciseForm(screens.pilatesForm, document.querySelector('#dockSlot'), {
     workoutTitle: workout.title,
+    names: exerciseNameOptions(true),
     exercise,
     referenceName: exercise?.reference ? 'Video di riferimento salvato' : null,
     onBack: () => openRoute(backRoute),
@@ -1902,7 +1903,16 @@ function renderAnyExerciseForm(workout, exercise, inDraft = false) {
   return 'pilatesForm';
 }
 
+// Suggerimenti del nome: esercizi già usati (in tutte le schede e nella bozza), poi gli esempi.
+function exerciseNameOptions(pilatesMode) {
+  const used = usedExerciseNames(workouts, { pilates: pilatesMode, extra: workoutDraft?.exercises ?? [] });
+  const examples = pilatesMode ? [] : ['Bike', 'Leg press', 'Curl con manubrio'];
+  const keys = new Set(used.map(exerciseKey));
+  return [...used, ...examples.filter((name) => !keys.has(exerciseKey(name)))];
+}
+
 function renderExerciseForm(workout, exercise, inDraft = false) {
+  document.querySelector('#exerciseSuggestions').replaceChildren(...exerciseNameOptions(false).map((name) => el('option', { value: name })));
   document.querySelector('#exerciseFormTitle').textContent = exercise ? 'Modifica esercizio' : 'Nuovo esercizio';
   const backRoute = inDraft ? draftRoute() : `#/scheda/${workout.id}`;
   document.querySelector('#exerciseFormTop').replaceChildren(topBar({ title: workout.title.trim() || 'Nuova scheda', onBack: () => openRoute(backRoute), backLabel: 'Torna alla scheda' }));
@@ -2096,7 +2106,7 @@ function renderRecords(exercise) {
   section.hidden = exercise.mode !== 'reps';
   if (section.hidden) return;
   const { start, events, top } = recordTimeline(exerciseEntries(storage, workouts, exercise.title));
-  const lift = (load, reps) => `${formatThousands(load)} kg × ${reps}`;
+  const lift = liftText;
   const day = (time) => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(time);
   const key = exerciseKey(exercise.title);
   const shared = workouts.filter((item) => item.mode !== 'pilates' && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === key)).length > 1;
@@ -2155,7 +2165,7 @@ function celebrateRecord(line, exercise, record) {
   if (haptics?.notification) haptics.notification({ type: 'SUCCESS' }).catch(() => {});
   else navigator.vibrate?.(40);
   recordTimers.forEach(clearTimeout);
-  const detail = `${exercise.title} · ${formatThousands(record.load)} kg × ${record.reps} · ${record.kind === 'load' ? `${gain} sul precedente` : `${gain} a questo carico`}`;
+  const detail = `${exercise.title} · ${liftText(record.load, record.reps)} · ${record.kind === 'load' ? `${gain} sul precedente` : `${gain} a questo carico`}`;
   const slot = document.querySelector('#timerSlot');
   slot.querySelector('.bg-prtoast')?.remove();
   const toastNode = el('button', { type: 'button', className: 'bg-prtoast', role: 'status', 'aria-live': 'polite', 'aria-label': `Nuovo record. ${detail}. Tocca per chiudere` },

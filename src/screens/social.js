@@ -4,6 +4,7 @@ import { appBar, button, el, emptyState, link, openSheet, textField, topBar } fr
 import { icon } from '../ui/icons.js';
 import { formatDuration } from '../workout-summary.js';
 import { thousands } from '../format.js';
+import { liftText } from '../records.js';
 
 // Colore dell'avatar: il tuo è quello tenue, gli amici alternano lime e scuro (stabile per persona).
 let currentMe = null;
@@ -78,7 +79,7 @@ export function postCard(post, names, { onStrength, onComments, onOpen, onAuthor
       post.body ? el('p', { className: 'bg-post__text', text: post.body }) : null),
     stats(post),
     records.length ? el('div', { className: 'bg-post__chips' }, records.map((record) => el('span', { className: 'bg-chip' },
-      icon('trophy', { small: true }), `${record.title} · ${thousands(record.load)} kg × ${record.reps}`))) : null,
+      icon('trophy', { small: true }), `${record.title} · ${liftText(record.load, record.reps)}`))) : null,
     milestones.length ? el('div', { className: 'bg-post__chips' }, milestones.map((item) => el('span', { className: 'bg-chip' },
       icon('star', { small: true }), item.title))) : null,
     el('div', { className: 'bg-post__foot' }, strength,
@@ -267,7 +268,7 @@ export function renderFriendProfile(root, { friend, stats, period, posts, names,
               el('span', { className: 'bg-exrow__num' }, icon('trophy', { small: true })),
               el('span', { className: 'bg-exrow__body' }, el('span', { className: 'bg-exrow__name', text: best.title }),
                 el('span', { className: 'bg-exrow__meta', text: recordDate(Number(best.at)) })),
-              el('span', { className: 'bg-exrow__target', text: `${thousands(Number(best.load))} kg × ${best.reps}` })))),
+              el('span', { className: 'bg-exrow__target', text: liftText(best.load, best.reps) })))),
           ] : null,
         ],
       posts.length ? [
