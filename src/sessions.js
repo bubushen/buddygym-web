@@ -39,7 +39,7 @@ export function backfillSessions(storage, workouts) {
   for (const workout of workouts.filter((item) => item.mode !== 'pilates')) {
     for (const session of workoutSessions(storage, workout)) {
       if (known.has(session.sessionId) || !Number.isFinite(session.startedAt)) continue;
-      const summary = workoutSummary(storage, workout, session.sessionId);
+      const summary = workoutSummary(storage, workout, session.sessionId, workouts);
       sessions.push(sessionFromSummary(workout, session.sessionId, session.startedAt, session.endedAt, summary));
       known.add(session.sessionId);
       added += 1;

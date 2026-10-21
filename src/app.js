@@ -29,6 +29,7 @@ import * as social from './social.js';
 import { openEndWorkoutSheet } from './screens/end-workout.js';
 import { withScreenOn } from './screen-awake.js';
 import * as pilates from './pilates.js';
+import { exerciseEntries, exerciseKey, recordTimeline } from './records.js';
 import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
@@ -914,7 +915,7 @@ async function finishWorkout() {
     const sessionId = `workout-${session.startedAt}`;
     const summary = workout.mode === 'pilates'
       ? pilatesSessionSummary(workout, sessionId, session.startedAt, endedAt)
-      : { ...workoutSummary(storage, workout, sessionId), duration: endedAt - session.startedAt };
+      : { ...workoutSummary(storage, workout, sessionId, workouts), duration: endedAt - session.startedAt };
     upsertSession(storage, sessionFromSummary(workout, sessionId, session.startedAt, endedAt, summary));
   }
   activeWorkout = null;
@@ -977,7 +978,7 @@ function renderSummaryScreen(workout, startedAt, endedAt) {
   }
   renderSummary(screens.summary, document.querySelector('#dockSlot'), {
     workout,
-    summary: { ...workoutSummary(storage, workout, sessionId), ...(endedAt > startedAt ? { duration: endedAt - startedAt } : {}) },
+    summary: { ...workoutSummary(storage, workout, sessionId, workouts), ...(endedAt > startedAt ? { duration: endedAt - startedAt } : {}) },
     name: currentProfile?.alias || currentProfile?.first_name || '',
     celebrate,
     published: publishedSessions.has(sessionId),
@@ -2085,6 +2086,44 @@ function renderHistory(workout, exercise) {
     ? 'Minuti massimi registrati per seduta · ultime 8 sedute.'
     : 'Carico massimo per seduta · ultime 8 sedute. Il grafico non tiene conto delle ripetizioni.';
   renderProgressChart(exercise, history);
+  renderRecords(exercise);
+}
+
+// Storico dei massimali: massimale attuale e ogni volta che è stato superato (carico o
+// ripetizioni), contando lo stesso esercizio in tutte le schede.
+function renderRecords(exercise) {
+  const section = document.querySelector('#recordsSection');
+  section.hidden = exercise.mode !== 'reps';
+  if (section.hidden) return;
+  const { start, events, top } = recordTimeline(exerciseEntries(storage, workouts, exercise.title));
+  const lift = (load, reps) => `${formatThousands(load)} kg × ${reps}`;
+  const day = (time) => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }).format(time);
+  const shared = workouts.filter((item) => item.mode !== 'pilates' && item.exercises.some((other) => other.mode === 'reps' && exerciseKey(other.title) === exerciseKey(exercise.title))).length > 1;
+  if (!start) {
+    section.replaceChildren(
+      el('div', { className: 'bg-blocktitle' }, el('h2', { text: 'Massimale' })),
+      emptyState('Il primo allenamento con questo esercizio sarà il punto di partenza dei tuoi record.'));
+    return;
+  }
+  const rows = [...events].reverse().slice(0, 8).map((event) => el('div', { className: 'bg-exrow' },
+    el('span', { className: 'bg-exrow__num' }, icon('trophy', { small: true })),
+    el('span', { className: 'bg-exrow__body' },
+      el('span', { className: 'bg-exrow__name', text: lift(event.load, event.reps) }),
+      el('span', { className: 'bg-exrow__meta', text: `${day(event.at)} · ${event.kind === 'load' ? 'record di carico' : 'record di ripetizioni'}` })),
+    el('span', { className: 'bg-delta' }, icon('arrowUp', { small: true }), event.kind === 'load' ? `${formatThousands(event.gain)} kg` : `${event.gain} rip.`)));
+  rows.push(el('div', { className: 'bg-exrow' },
+    el('span', { className: 'bg-exrow__num', text: '—' }),
+    el('span', { className: 'bg-exrow__body' },
+      el('span', { className: 'bg-exrow__name', text: lift(start.load, start.reps) }),
+      el('span', { className: 'bg-exrow__meta', text: `${day(start.at)} · punto di partenza` }))));
+  section.replaceChildren(
+    el('div', { className: 'bg-blocktitle' }, el('h2', { text: 'Massimale' }), shared ? el('span', { text: 'da tutte le schede' }) : null),
+    el('div', { className: 'bg-pr' },
+      el('span', { className: 'bg-pr__ic' }, icon('trophy')),
+      el('span', {}, el('small', { text: top.at ? `Massimale attuale · ${day(top.at)}` : 'Massimale attuale' }), el('b', { text: lift(top.load, top.reps) }))),
+    el('div', { className: 'bg-blocktitle bg-blocktitle--rows' }, el('h2', { text: 'Record' }), el('span', { text: events.length ? `${events.length} ${events.length === 1 ? 'record' : 'record'}` : 'nessuno ancora' })),
+    el('div', { className: 'bg-exlist' }, rows),
+    el('p', { className: 'bg-note bg-note--inset', text: 'Record: più kg di sempre, oppure più ripetizioni di sempre a un carico già fatto.' }));
 }
 
 document.querySelector('#toggleProgressButton').addEventListener('click', () => {
@@ -2280,7 +2319,7 @@ function renderExercise(workout, exercise) {
   document.querySelector('#deleteExerciseButton').onclick = () => deleteExercise(workout.id, exercise.id);
   // Pilates: a tempo, niente serie, ripetizioni o kg.
   const pilatesExercise = exercise.mode === 'pilates';
-  for (const id of ['targetSection', 'exerciseHistorySection', 'exerciseSetsSection']) document.getElementById(id).hidden = pilatesExercise;
+  for (const id of ['targetSection', 'exerciseHistorySection', 'exerciseSetsSection', 'recordsSection']) document.getElementById(id).hidden = pilatesExercise;
   document.querySelector('#pilatesBlock').hidden = !pilatesExercise;
   document.querySelector('.bg-video--placeholder').classList.toggle('bg-video--pilates', pilatesExercise);
   document.querySelector('#openAnalysisButton small').textContent = pilatesExercise ? 'Analisi della postura e tracking della posizione' : 'Analisi della tecnica e tracking della posizione';

@@ -2,16 +2,11 @@
 // salvato da finishWorkoutSession: niente dati nuovi.
 import { readExerciseHistory, sessionMetric } from './workout-history.js';
 import { plannedSets } from './workout-insights.js';
+import { exerciseEntries, exerciseKey, sessionRecords } from './records.js';
 
 const num = (value) => Number(String(value ?? '').replace(',', '.'));
 const rowVolume = (row) => (num(row.reps) > 0 && num(row.load) > 0 ? num(row.reps) * num(row.load) : 0);
 const entriesVolume = (entries) => entries.reduce((sum, entry) => sum + entry.rows.reduce((total, row) => total + rowVolume(row), 0), 0);
-
-// Riga con il carico più alto (a parità, più ripetizioni): è quella del record.
-function bestRow(entry) {
-  return entry.rows.filter((row) => num(row.load) > 0 && num(row.reps) > 0)
-    .sort((a, b) => num(b.load) - num(a.load) || num(b.reps) - num(a.reps))[0] ?? null;
-}
 
 export function formatDuration(milliseconds) {
   const seconds = Math.max(0, Math.round(milliseconds / 1000));
@@ -21,7 +16,7 @@ export function formatDuration(milliseconds) {
   return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}` : `${minutes}:${rest}`;
 }
 
-export function workoutSummary(storage, workout, sessionId) {
+export function workoutSummary(storage, workout, sessionId, allWorkouts = [workout]) {
   const perExercise = workout.exercises.map((exercise) => {
     const history = readExerciseHistory(storage, workout.id, exercise.id).sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
     const today = history.find((entry) => entry.sessionId === sessionId) ?? null;
@@ -42,14 +37,18 @@ export function workoutSummary(storage, workout, sessionId) {
   const done = perExercise.filter((item) => item.today?.rows.length).length;
 
   const records = [];
+  const seen = new Set();
   const exercises = perExercise.map(({ exercise, today, before }) => {
     const value = today ? sessionMetric(exercise, today) : null;
     const last = before.filter((entry) => entry.sessionId === previousId).at(-1) ?? before.at(-1);
     const lastValue = last ? sessionMetric(exercise, last) : null;
-    if (exercise.mode !== 'time' && today && before.length) {
-      const best = bestRow(today);
-      const previousBest = Math.max(0, ...before.map((entry) => sessionMetric(exercise, entry) ?? 0));
-      if (best && num(best.load) > previousBest) records.push({ title: exercise.title, load: num(best.load), reps: num(best.reps) });
+    // Record di carico o di ripetizioni, confrontati con lo stesso esercizio in tutte le schede.
+    const key = exerciseKey(exercise.title);
+    if (exercise.mode === 'reps' && today && !seen.has(key)) {
+      seen.add(key);
+      for (const event of sessionRecords(exerciseEntries(storage, allWorkouts, exercise.title), sessionId)) {
+        records.push({ title: exercise.title, load: event.load, reps: event.reps, kind: event.kind });
+      }
     }
     return {
       title: exercise.title, unit: exercise.mode === 'time' ? 'min' : 'kg', value,
