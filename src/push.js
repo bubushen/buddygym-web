@@ -2,9 +2,9 @@
 // Il telefono registra il suo token sull'account; il server (Edge Function push-notify)
 // invia le notifiche del Social. Toccando la notifica si apre la schermata giusta.
 
-// Diventa true quando android/app/google-services.json è presente: senza Firebase
-// configurato la registrazione farebbe chiudere l'app.
-export const PUSH_ENABLED = false;
+// Firebase è configurato per Android (android/app/google-services.json, progetto
+// buddygym-5c36d): senza quel file la registrazione farebbe chiudere l'app.
+export const PUSH_ENABLED = true;
 
 const TOKEN_KEY = 'buddygym:push-token';
 const plugin = () => globalThis.Capacitor?.Plugins?.PushNotifications;
