@@ -35,7 +35,7 @@ function chart(metric, history) {
     svg('text', { class: 'bg-chart__y', x: 0, y: model.high.y }, formatValue(model.high.value)),
     svg('text', { class: 'bg-chart__y', x: 0, y: model.low.y }, formatValue(model.low.value)),
     svg('path', { class: 'bg-chart__area', d: `M${model.points[0].x},${model.base} L${coords.join(' L')} L${last.x},${model.base} Z` }),
-    svg('polyline', { class: 'bg-chart__line', points: coords.join(' ') }),
+    svg('polyline', { class: 'bg-chart__line', points: coords.join(' '), pathLength: 1 }),
     ...model.points.flatMap((point) => [
       svg('circle', point === last
         ? { class: 'bg-chart__last', cx: point.x, cy: point.y, r: 5 }

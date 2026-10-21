@@ -150,7 +150,7 @@ export function renderPilatesBlock(root, { exercise, history, state, onStart, on
         : el('button', { type: 'button', className: 'bg-btn bg-btn--outline', onClick: onStart }, icon('play'), 'Avvia');
     const done = mode === 'done'
       ? el('button', { type: 'button', className: 'bg-btn bg-btn--outline bg-btn--disabled', disabled: true }, icon('check', { small: true }), 'Fatto')
-      : el('button', { type: 'button', className: 'bg-btn bg-btn--primary', onClick: onDone }, icon('check', { small: true }), 'Fatto');
+      : el('button', { type: 'button', className: 'bg-btn bg-btn--primary', onClick: (event) => onDone(event.currentTarget) }, icon('check', { small: true }), 'Fatto');
     play.replaceChildren(...(mode === 'done' ? [main, done] : [main, done]));
   };
 

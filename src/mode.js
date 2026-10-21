@@ -22,20 +22,27 @@ let current = null;
 export const currentMode = () => current ?? 'gym';
 export const isPilates = () => current === 'pilates';
 
-export function applyMode(mode, { fade = false } = {}) {
+// Cambio dall'Account: il nuovo tema si allarga a cerchio dal punto toccato (400 ms, CSS
+// ::view-transition-new); con «Riduci movimento» diventa una dissolvenza.
+export function applyMode(mode, { fade = false, origin = null } = {}) {
   current = MODES.includes(mode) ? mode : null;
   const root = document.documentElement;
   const theme = themeFor(currentMode(), darkQuery ? darkQuery.matches : true);
   if (root.dataset.theme === theme) return;
-  // Cambio dall'Account: dissolvenza di 300 ms (salvo «Riduci movimento»).
-  const reduce = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  if (fade && !reduce && document.startViewTransition) document.startViewTransition(() => { root.dataset.theme = theme; });
+  if (origin) {
+    root.style.setProperty('--reveal-x', `${Math.round(origin.x)}px`);
+    root.style.setProperty('--reveal-y', `${Math.round(origin.y)}px`);
+  } else {
+    root.style.removeProperty('--reveal-x');
+    root.style.removeProperty('--reveal-y');
+  }
+  if (fade && document.startViewTransition) document.startViewTransition(() => { root.dataset.theme = theme; });
   else root.dataset.theme = theme;
 }
 
-export function saveMode(storage, mode) {
+export function saveMode(storage, mode, origin = null) {
   try { storage?.setItem(MODE_KEY, mode); } catch { /* Vale per questa apertura. */ }
-  applyMode(mode, { fade: true });
+  applyMode(mode, { fade: true, origin });
 }
 
 darkQuery?.addEventListener?.('change', () => applyMode(current));

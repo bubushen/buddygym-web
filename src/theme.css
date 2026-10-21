@@ -22,6 +22,11 @@
   --blush-300: #ffafcc;
   --icy-100: #bde0fe;
   --sky-300: #a2d2ff;
+  /* Colori fissi delle modalità, uguali in tutti i temi (calendario dello Storico, etichette). */
+  --mode-gym: var(--forest-700);
+  --on-mode-gym: var(--lime-100);
+  --mode-pilates: var(--blush-300);
+  --on-mode-pilates: #3a2340;
 
   /* Token semantici · tema scuro (principale) */
   --surface: var(--forest-900);
@@ -283,6 +288,30 @@
   --pr-toast-ic: 36px;
   --type-pr-toast: 800 15px/20px var(--font-display);
   --type-pr-toast-sub: 500 12px/16px var(--font-sans);
+  /* Storico per giorno (HistoryScreen) */
+  --cal-gap: 5px;
+  --type-cal-head: 600 11px/1 var(--font-sans);
+  --day-h: 40px;
+  --day-radius: 10px;
+  --type-day: 600 12px/1 var(--font-sans);
+  --day-both-dot: 22px;
+  --day-rec: 6px;
+  --day-rec-inset: 4px;
+  --day-selected: 2.5px;
+  --day-today: 1.5px;
+  --type-legend2: 500 11px/14px var(--font-sans);
+  --legend2-swatch: 12px;
+  --legend2-radius: 4px;
+  --type-dayhead: 800 20px/24px var(--font-display);
+  --type-dayhead-sub: 500 12px/16px var(--font-sans);
+  --mtag-h: 22px;
+  --mtag-pad: 10px;
+  --type-mtag: 700 11px/1 var(--font-sans);
+  --track-mtag: .02em;
+  --type-dcard-title: 800 20px/24px var(--font-display);
+  --type-dcard-stat: 800 16px/20px var(--font-display);
+  --type-dayempty: 500 14px/20px var(--font-sans);
+  --type-dayempty-title: 700 15px/20px var(--font-sans);
   /* Riepilogo di fine allenamento e coriandoli */
   --badge-xl: 72px;
   --badge-xl-icon: 36px;

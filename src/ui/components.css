@@ -630,8 +630,6 @@ button.bg-rank { cursor: pointer; }
 #toastSlot { position: absolute; left: var(--space-4); right: var(--space-4); bottom: calc(var(--space-6) * 3); z-index: 8; display: grid; justify-items: center; pointer-events: none; }
 .bg-toast { padding: var(--space-3) var(--space-4); border-radius: var(--radius-pill); background: var(--ink); color: var(--surface); font: var(--type-label); text-align: center; }
 
-/* Cambio di modalità: dissolvenza di 300 ms tra i temi. */
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 300ms; }
 
 /* ——— Modalità: WelcomeSplitScreen ——— */
 #welcomeScreen:not([hidden]) { position: fixed; inset: 0; z-index: 20; }
@@ -763,3 +761,75 @@ button.bg-rank { cursor: pointer; }
   .bg-set--pr .bg-prbadge { animation: none; opacity: 1; }
   .bg-prtoast { transition: opacity var(--dur-base) linear; transform: none; }
 }
+
+/* ——— ScrollFocusList: la scala e l'opacità le imposta lo scroll (src/ui/focus-list.js) ——— */
+.bg-focuslist .bg-card { transform-origin: 50% 50%; will-change: transform, opacity; }
+
+/* ——— MicroInteractions ——— */
+/* Pulsanti: scala 0.97 al tocco. */
+.bg-btn, .bg-iconbtn, .bg-startbtn, .bg-opt, .bg-fchip, .bg-set__ok { transition: transform var(--dur-fast) var(--ease-out); }
+.bg-btn:active, .bg-iconbtn:active, .bg-startbtn:active, .bg-opt:active, .bg-fchip:active { transform: scale(.97); }
+/* Spunta della serie: riempimento primary (il rimbalzo lo fa src/app.js con Web Animations). */
+.bg-set__ok { transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }
+/* Pannelli dal basso: il velo arriva in dissolvenza. */
+.bg-scrim { animation: bg-fade-in 300ms var(--ease-out) both; }
+@keyframes bg-fade-in { from { opacity: 0; } }
+/* Cambio pagina dalla tab bar: dissolvenza 150 ms. */
+.screen.bg-screen-in { animation: bg-fade-in var(--dur-fast) var(--ease-out) both; }
+/* Anello del timer Pilates: lineare, un aggiornamento al secondo. */
+.bg-bigring__prog { transition: stroke-dashoffset 1s linear; }
+/* Cambio modalità: il nuovo tema si allarga a cerchio dal punto toccato (400 ms). */
+::view-transition-old(root) { animation: none; }
+::view-transition-new(root) { animation: bg-mode-reveal var(--dur-slow) var(--ease-out) both; }
+@keyframes bg-mode-reveal { from { clip-path: circle(0 at var(--reveal-x, 50%) var(--reveal-y, 50%)); } to { clip-path: circle(150vmax at var(--reveal-x, 50%) var(--reveal-y, 50%)); } }
+@media (prefers-reduced-motion: reduce) {
+  .bg-btn:active, .bg-iconbtn:active, .bg-startbtn:active, .bg-opt:active, .bg-fchip:active { transform: none; }
+  .bg-bigring__prog { transition: none; }
+  ::view-transition-new(root) { animation: bg-fade-in var(--dur-base) linear both; }
+}
+/* Grafico delle misure: la riga aperta arriva in dissolvenza, la linea si disegna da sinistra. */
+.bg-metric--open .bg-chart { animation: bg-fade-in var(--dur-base) var(--ease-out) both; }
+.bg-metric--open .bg-chart__line { stroke-dasharray: 1; animation: bg-draw var(--dur-slow) var(--ease-out) var(--dur-base) both; }
+@keyframes bg-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .bg-metric--open .bg-chart__line { animation: none; } }
+
+/* ——— Storico per giorno (HistoryScreen) ——— */
+.bg-month__nav { display: inline-flex; align-items: center; gap: var(--space-1); }
+.bg-month__count { margin-right: var(--space-2); }
+.bg-cal2 { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--cal-gap); text-align: center; }
+.bg-cal2 > span { font: var(--type-cal-head); color: var(--ink-muted); padding-bottom: var(--space-1); }
+.bg-day { position: relative; height: var(--day-h); border-radius: var(--day-radius); border: 0; padding: 0; display: grid; place-items: center; background: transparent; color: var(--ink-muted); font: var(--type-day); cursor: pointer; }
+.bg-day--empty { background: transparent; cursor: default; }
+.bg-day--gym { background: var(--mode-gym); color: var(--on-mode-gym); font-weight: 800; }
+.bg-day--pil { background: var(--mode-pilates); color: var(--on-mode-pilates); font-weight: 800; }
+.bg-day--both { background: linear-gradient(135deg, var(--mode-gym) 50%, var(--mode-pilates) 50%); color: var(--ink); font-weight: 800; }
+.bg-day--both b { width: var(--day-both-dot); height: var(--day-both-dot); border-radius: 50%; display: grid; place-items: center; background: var(--surface-raised); font: inherit; }
+.bg-day--rec::after { content: ""; position: absolute; top: var(--day-rec-inset); right: var(--day-rec-inset); width: var(--day-rec); height: var(--day-rec); border-radius: 50%; background: currentColor; }
+.bg-day--both.bg-day--rec::after { background: var(--on-mode-pilates); }
+.bg-day[aria-pressed="true"] { outline: var(--day-selected) solid var(--ink); outline-offset: 2px; }
+.bg-day--today:not([aria-pressed="true"]) { outline: var(--day-today) dashed var(--ink-muted); outline-offset: 1px; }
+.bg-day:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+.bg-legend2 { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-top: var(--space-4); font: var(--type-legend2); color: var(--ink-muted); }
+.bg-legend2 span { display: inline-flex; align-items: center; gap: var(--modeseg-gap); }
+.bg-legend2 i { width: var(--legend2-swatch); height: var(--legend2-swatch); border-radius: var(--legend2-radius); display: inline-block; }
+.bg-legend2__gym { background: var(--mode-gym); }
+.bg-legend2__pil { background: var(--mode-pilates); }
+.bg-legend2__both { background: linear-gradient(135deg, var(--mode-gym) 50%, var(--mode-pilates) 50%); }
+.bg-dayhead { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); padding: var(--space-5) var(--space-4) var(--space-3); }
+.bg-dayhead h2 { margin: 0; font: var(--type-dayhead); color: var(--ink); }
+.bg-dayhead span { font: var(--type-dayhead-sub); color: var(--ink-muted); white-space: nowrap; }
+.bg-daylist { display: grid; gap: var(--space-3); padding: 0 var(--space-4) var(--space-5); }
+.bg-dcard { position: relative; display: grid; gap: var(--space-2); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-raised); border: var(--border-thin) solid var(--line); color: var(--ink); text-align: left; font: inherit; cursor: pointer; width: 100%; box-sizing: border-box; }
+.bg-dcard:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+.bg-dcard__top { display: flex; align-items: center; gap: var(--space-2); font: var(--type-dayhead-sub); color: var(--ink-muted); }
+.bg-mtag { display: inline-flex; align-items: center; height: var(--mtag-h); padding: 0 var(--mtag-pad); border-radius: var(--radius-pill); font: var(--type-mtag); letter-spacing: var(--track-mtag); }
+.bg-mtag--gym { background: var(--mode-gym); color: var(--on-mode-gym); }
+.bg-mtag--pil { background: var(--mode-pilates); color: var(--on-mode-pilates); }
+.bg-dcard h3 { margin: 0; font: var(--type-dcard-title); }
+.bg-dcard__stats { display: flex; gap: var(--space-5); font: var(--type-dayhead-sub); color: var(--ink-muted); }
+.bg-dcard__stats b { display: block; font: var(--type-dcard-stat); color: var(--ink); font-variant-numeric: tabular-nums; }
+.bg-dcard .bg-chip { justify-self: start; }
+.bg-dcard__chev { position: absolute; top: var(--space-4); right: var(--space-4); color: var(--ink-muted); }
+.bg-dayempty { margin: 0 var(--space-4) var(--space-5); padding: var(--space-5); border-radius: var(--radius-lg); border: var(--border-thin) dashed var(--line); text-align: center; font: var(--type-dayempty); color: var(--ink-muted); }
+.bg-dayempty b { display: block; margin-bottom: var(--space-1); font: var(--type-dayempty-title); color: var(--ink); }
+.bg-focuslist .bg-dcard { transform-origin: 50% 50%; will-change: transform, opacity; }

@@ -33,7 +33,7 @@ import { exerciseEntries, exerciseKey, judgeSet, liftText, recordTimeline, usedE
 import { daysInRow } from './pilates.js';
 import { ACTIVE_REST_KEY, adjustRest, createRest, loadRest, nextOpenSet, restRemaining } from './rest-timer.js';
 import { formatDuration, workoutSummary } from './workout-summary.js';
-import { SESSIONS_KEY, backfillSessions, historyTitles, historyView, loadSessions, sessionFromSummary, sessionMode, upsertSession } from './sessions.js';
+import { SESSIONS_KEY, backfillSessions, calendarMonth, daySessions, defaultDay, loadSessions, sessionFromSummary, sessionMode, upsertSession } from './sessions.js';
 import { createCoachUI } from './coach-ui.js';
 import { canCompressVideo, compressVideo } from './video-compress.js';
 import { keepFrameFitted } from './video-frame.js';
@@ -45,6 +45,8 @@ import { signInError } from './account-rules.js';
 import { el, emptyState, openSheet, pageHead, tabBar, timerBar, topBar, button as uiButton } from './ui/components.js';
 import { icon } from './ui/icons.js';
 import { disablePush, enablePush } from './push.js';
+import { hapticLight, hapticSuccess, hapticTick, reducedMotion } from './haptics.js';
+import { attachFocusList } from './ui/focus-list.js';
 import { canEditWorkout, coachVideoUrl, downloadReferenceVideo, removeReferenceVideo, uploadReferenceVideo } from './coach-data.js';
 
 // Librerie e modello sono inclusi nell'app (npm run vendor): nessun download a runtime.
@@ -64,6 +66,8 @@ const analyzeButton = document.querySelector('#analyzeButton');
 const status = document.querySelector('#status');
 const feedback = document.querySelector('#feedback');
 const appScroll = document.querySelector('#appScroll');
+// Card a fuoco durante lo scroll (ScrollFocusList) su Schede, Sequenze e Storico.
+const refreshFocusList = attachFocusList(appScroll);
 const deviceStorage = (() => { try { return window.localStorage; } catch { return null; } })();
 let storage = deviceStorage;
 let cloudClient;
@@ -109,18 +113,17 @@ const inMode = (workout) => (workout?.mode === 'pilates') === isPilates();
 const modeWorkouts = () => workouts.filter(inMode);
 const modeSessions = () => (storage ? loadSessions(storage) : []).filter((session) => sessionMode(session) === currentMode());
 
-function chooseMode(mode, { pending = false } = {}) {
-  saveMode(deviceStorage, mode);
+function chooseMode(mode, { pending = false, origin = null } = {}) {
+  saveMode(deviceStorage, mode, origin);
   try {
     if (pending) deviceStorage.setItem(MODE_PENDING_KEY, mode);
     else deviceStorage.removeItem(MODE_PENDING_KEY);
   } catch { /* Vale per questa apertura. */ }
-  historyState.filter = null;
 }
 
-async function changeMode(mode) {
+async function changeMode(mode, origin = null) {
   if (activeWorkout || mode === currentMode()) return;
-  chooseMode(mode);
+  chooseMode(mode, { origin });
   if (cloudUser && cloudClient) {
     currentProfile = { ...(currentProfile ?? {}), mode };
     saveProfileMode(cloudClient, cloudUser.id, mode).catch((error) => {
@@ -347,7 +350,7 @@ function renderProfileScreen() {
     status: lastAccountMessage,
     canRunBench: benchAvailableHere,
     version: appVersion,
-    modeSection: modePicker({ mode: currentMode(), locked: !!activeWorkout, onChange: (mode) => { void changeMode(mode); } }),
+    modeSection: modePicker({ mode: currentMode(), locked: !!activeWorkout, onChange: (mode, origin) => { void changeMode(mode, origin); } }),
     privacy: currentProfile ? { shareStats: currentProfile.share_stats !== false, shareLoads: currentProfile.share_loads !== false } : null,
     onPrivacy: async (key, value) => {
       if (!cloudUser) return false;
@@ -1015,12 +1018,9 @@ function renderSessionSummary(session) {
   });
 }
 
-// Leggera vibrazione «success» insieme ai coriandoli, dove il telefono la supporta.
+// Vibrazione «success» a fine allenamento (anche con «Riduci movimento»).
 function celebrationHaptic() {
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-  const haptics = globalThis.Capacitor?.Plugins?.Haptics;
-  if (haptics?.notification) haptics.notification({ type: 'SUCCESS' }).catch(() => {});
-  else navigator.vibrate?.(40);
+  hapticSuccess();
 }
 
 updateWorkoutTimer();
@@ -1116,11 +1116,22 @@ function hideRestPanel() {
   if (!screens.exercise.hidden) document.querySelector('#exerciseNav').hidden = false;
 }
 
+// Ultimi 3 secondi di recupero, pausa o esercizio Pilates: tre vibrazioni brevi (una al secondo).
+let lastCountdown = '';
+function countdownHaptic(key, remaining) {
+  if (remaining < 1 || remaining > 3 || document.hidden) return;
+  const mark = `${key}:${remaining}`;
+  if (mark === lastCountdown) return;
+  lastCountdown = mark;
+  hapticTick();
+}
+
 function tickRest() {
   if (!activeRest) return;
   if (activeWorkout?.workoutId !== activeRest.workoutId) { clearRest(); return; }
   const remaining = restRemaining(activeRest);
   if (remaining === 0) { finishRest(true); return; }
+  countdownHaptic(`rest:${activeRest.endsAt}`, remaining);
   restView?.update(remaining, activeRest.total);
 }
 
@@ -1287,6 +1298,7 @@ function pilatesStateFor(workout, index) {
 }
 
 function drawPilates() {
+  if (pilatesClock?.running) countdownHaptic(`pilates:${pilatesClock.workoutId}:${pilatesClock.index}:${pilatesClock.phase}`, Math.ceil(pilates.remainingMs(pilatesClock) / 1000));
   const workout = workouts.find((item) => item.mode === 'pilates' && pilatesRouteIndex(item) >= 0);
   if (!workout) { hidePausePanel(); return; }
   const index = pilatesRouteIndex(workout);
@@ -1345,8 +1357,10 @@ function renderPilatesExercise(workout, exercise) {
     },
     onPause: () => { pilatesClock = pilates.pauseClock(pilatesClock); savePilatesClock(); drawPilates(); },
     onResume: () => { pilatesClock = pilates.resumeClock(pilatesClock); savePilatesClock(); drawPilates(); },
-    onDone: () => {
+    onDone: (button) => {
       if (activeWorkout?.workoutId !== workout.id && !startWorkout(workout)) return;
+      hapticLight();
+      if (button) bounce(button);
       unlockRestAudio();
       // «Fatto» senza aver avviato il timer: l'esercizio conta per la sua durata.
       const running = pilatesClock?.workoutId === workout.id && pilatesClock.phase === 'exercise' && pilatesClock.index === index
@@ -1388,32 +1402,41 @@ function renderHome() {
 }
 
 // Storico: mese mostrato e filtro restano finché l'app è aperta.
-const historyState = { year: new Date().getFullYear(), month: new Date().getMonth(), filter: null };
+// Storico (HistoryScreen): mese, filtro e giorno restano finché l'app è aperta. Mostra
+// entrambe le modalità; il resto dell'app resta nella modalità attiva.
+const historyState = { year: new Date().getFullYear(), month: new Date().getMonth(), filter: 'all', day: null };
 function renderHistoryScreen() {
   if (storage) backfillSessions(storage, workouts);
-  // Lo Storico mostra solo le sessioni della modalità attiva.
-  const sessions = modeSessions();
-  const titles = historyTitles(sessions, modeWorkouts());
-  if (historyState.filter && !titles.includes(historyState.filter)) historyState.filter = null;
+  const sessions = storage ? loadSessions(storage) : [];
+  const { year, month, filter } = historyState;
+  if (!historyState.day || historyState.day > new Date(year, month + 1, 0).getDate()) historyState.day = defaultDay(sessions, { year, month, filter });
+  const calendar = calendarMonth(sessions, { year, month, filter });
+  calendar.titles = new Map();
+  for (const item of sessions.filter((entry) => filter === 'all' || sessionMode(entry) === filter)) {
+    const date = new Date(item.endedAt);
+    if (date.getFullYear() !== year || date.getMonth() !== month) continue;
+    const list = calendar.titles.get(date.getDate()) ?? [];
+    list.push(`${sessionMode(item) === 'pilates' ? 'Pilates' : 'palestra'} ${item.title}`);
+    calendar.titles.set(date.getDate(), list);
+  }
   renderHistoryView(screens.history, {
-    view: historyView(sessions, { year: historyState.year, month: historyState.month, workoutTitle: historyState.filter }),
-    year: historyState.year,
-    month: historyState.month,
-    titles,
-    filter: historyState.filter,
-    pilates: isPilates(),
+    year, month, filter, calendar,
+    day: historyState.day,
+    sessions: daySessions(sessions, { year, month, day: historyState.day, filter }),
     initial: accountInitial(),
     onAccount: () => openRoute('#/account'),
-    onFilter: (title) => { historyState.filter = title; renderHistoryScreen(); },
+    onFilter: (value) => { historyState.filter = value; historyState.day = null; renderHistoryScreen(); },
+    onDay: (day) => { historyState.day = day; renderHistoryScreen(); refreshFocusList(); },
     onMonth: (step) => {
-      const date = new Date(historyState.year, historyState.month + step, 1);
+      const date = new Date(year, month + step, 1);
       historyState.year = date.getFullYear();
       historyState.month = date.getMonth();
+      historyState.day = null;
       renderHistoryScreen();
     },
     onOpen: (session) => openRoute(`#/storico/${encodeURIComponent(session.id)}`),
-    onEmpty: () => openRoute('#/schede'),
   });
+  refreshFocusList();
 }
 
 // ── Social ─────────────────────────────────────────────────────────────
@@ -1775,11 +1798,27 @@ let socialUnread = false;
 // Schermate già passate al nuovo design: senza la vecchia intestazione.
 const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'summary', 'coach', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
 
+// Tab bar (MicroInteractions): la pill scivola alla nuova voce (300 ms, molla), la pagina
+// arriva in dissolvenza (150 ms), vibrazione leggera al tocco.
+const TAB_ORDER = ['schede', 'storico', 'nutrizione', 'coaching', 'social'];
+let shownTab = null;
 function renderChrome(screen) {
   document.querySelector('#phoneShell').dataset.chrome = NEW_DESIGN_SCREENS.has(screen) ? 'new' : 'legacy';
   const slot = document.querySelector('#tabBarSlot');
   const current = demoPreview ? null : TAB_SCREENS[screen];
-  slot.replaceChildren(current ? tabBar({ current, dots: { social: socialUnread }, onSelect: (tab) => openRoute(`#/${tab}`) }) : '');
+  slot.replaceChildren(current ? tabBar({ current, dots: { social: socialUnread }, onSelect: (tab) => { if (tab !== current) hapticLight(); openRoute(`#/${tab}`); } }) : '');
+  const previous = shownTab;
+  shownTab = current;
+  if (!current || !previous || previous === current || reducedMotion()) return;
+  const nav = slot.querySelector('.bg-tabbar');
+  const pill = nav?.querySelector('[aria-current="page"] .bg-tab__pill');
+  const width = nav?.children[0]?.getBoundingClientRect().width ?? 0;
+  pill?.animate?.([{ transform: `translateX(${(TAB_ORDER.indexOf(previous) - TAB_ORDER.indexOf(current)) * width}px)` }, { transform: 'none' }],
+    { duration: 300, easing: 'cubic-bezier(.34, 1.56, .64, 1)' });
+  const page = screens[screen];
+  page?.classList.remove('bg-screen-in');
+  void page?.offsetWidth;
+  page?.classList.add('bg-screen-in');
 }
 
 function renderWorkout(workout) {
@@ -2144,6 +2183,13 @@ document.querySelector('#toggleProgressButton').addEventListener('click', () => 
 
 // Le tue serie: ripetizioni, carico e spunta. I campi vuoti suggeriscono i valori
 // della scorsa volta; la spunta senza valori li conferma.
+// Rimbalzo delle spunte (MicroInteractions): solo transform, spento con «Riduci movimento».
+function bounce(node) {
+  if (reducedMotion() || !node.animate) return;
+  node.animate([{ transform: 'scale(1)' }, { transform: 'scale(.85)' }, { transform: 'scale(1.15)' }, { transform: 'scale(1)' }],
+    { duration: 250, easing: 'cubic-bezier(.34, 1.56, .64, 1)' });
+}
+
 // RecordCelebration: spunta che rimbalza, campi accesi, 12 dischetti, «+5 kg» che sale,
 // badge «Record» e avviso sotto il cronometro. Non blocca nulla: il recupero parte comunque.
 const BURST = [[-67, -22, 0], [-74, -54, 47], [-67, -92, 94], [-22, -67, 141], [0, -92, 188], [35, -108, 235], [41, -57, 282], [74, -54, 329], [108, -35, 16], [70, 0, 63], [87, 28, 110], [92, 67, 157]];
@@ -2161,9 +2207,7 @@ function celebrateRecord(line, exercise, record) {
     }))));
   line.classList.add('bg-set--pr');
   // Vibrazione «success» anche con «Riduci movimento».
-  const haptics = globalThis.Capacitor?.Plugins?.Haptics;
-  if (haptics?.notification) haptics.notification({ type: 'SUCCESS' }).catch(() => {});
-  else navigator.vibrate?.(40);
+  hapticSuccess();
   recordTimers.forEach(clearTimeout);
   const detail = `${exercise.title} · ${liftText(record.load, record.reps)} · ${record.kind === 'load' ? `${gain} sul precedente` : `${gain} a questo carico`}`;
   const slot = document.querySelector('#timerSlot');
@@ -2245,6 +2289,8 @@ function renderSetRows(workout, exercise) {
       }
       row.done = !row.done;
       line.classList.toggle('bg-set--done', row.done);
+      // Spunta: rimbalzo 1 → 0.85 → 1.15 → 1 (250 ms) e vibrazione leggera.
+      if (row.done) { hapticLight(); bounce(tick); }
       tick.setAttribute('aria-pressed', String(row.done));
       tick.setAttribute('aria-label', row.done ? `Serie ${index + 1} completata` : `Segna serie ${index + 1} completata`);
       save();
@@ -2726,6 +2772,7 @@ function renderRoute() {
     if (activeExerciseKey && !working) { releaseAttempt(); activeExerciseKey = undefined; }
   }
   appScroll.scrollTop = 0;
+  refreshFocusList();
 }
 
 renderRoute();

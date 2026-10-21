@@ -101,3 +101,40 @@ export function historyTitles(sessions, workouts) {
   const order = workouts.map((workout) => workout.title);
   return titles.sort((a, b) => (order.indexOf(a) + 1 || 999) - (order.indexOf(b) + 1 || 999) || a.localeCompare(b, 'it'));
 }
+
+// ——— Storico per giorno (HistoryScreen): entrambe le modalità, filtro Tutto/Palestra/Pilates ———
+const sameMonth = (time, year, month) => { const date = new Date(time); return date.getFullYear() === year && date.getMonth() === month; };
+const isRecordDay = (item) => (item.summary?.records?.length ?? 0) > 0 || (item.summary?.milestones?.length ?? 0) > 0;
+
+// Caselle del mese: per ogni giorno con allenamenti, palestra / Pilates e se c'è un record
+// o un traguardo. Con un filtro l'altra modalità sparisce dal calendario.
+export function calendarMonth(sessions, { year, month, filter = 'all' }) {
+  const shown = sessions.filter((item) => filter === 'all' || sessionMode(item) === filter);
+  const days = new Map();
+  for (const item of shown) {
+    if (!sameMonth(item.endedAt, year, month)) continue;
+    const day = new Date(item.endedAt).getDate();
+    const entry = days.get(day) ?? { gym: false, pilates: false, record: false };
+    entry[sessionMode(item)] = true;
+    entry.record ||= isRecordDay(item);
+    days.set(day, entry);
+  }
+  return { days, trainingDays: days.size };
+}
+
+// Allenamenti di un giorno, in ordine di orario.
+export function daySessions(sessions, { year, month, day, filter = 'all' }) {
+  return sessions.filter((item) => (filter === 'all' || sessionMode(item) === filter)
+    && sameMonth(item.endedAt, year, month) && new Date(item.endedAt).getDate() === day)
+    .sort((a, b) => (a.startedAt ?? a.endedAt) - (b.startedAt ?? b.endedAt));
+}
+
+// Giorno selezionato all'apertura: oggi, o l'ultimo giorno con un allenamento (nel mese mostrato).
+export function defaultDay(sessions, { year, month, filter = 'all', now = Date.now() }) {
+  const today = new Date(now);
+  const { days } = calendarMonth(sessions, { year, month, filter });
+  if (today.getFullYear() === year && today.getMonth() === month && days.has(today.getDate())) return today.getDate();
+  const worked = [...days.keys()].filter((day) => !(today.getFullYear() === year && today.getMonth() === month) || day <= today.getDate());
+  if (worked.length) return Math.max(...worked);
+  return today.getFullYear() === year && today.getMonth() === month ? today.getDate() : 1;
+}

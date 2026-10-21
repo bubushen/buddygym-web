@@ -58,7 +58,7 @@ export function modePicker({ mode, locked, onChange }) {
   const group = el('div', { className: 'bg-modeseg', role: 'radiogroup', 'aria-label': 'Modalità' },
     options.map(([value, label, glyph]) => el('button', {
       type: 'button', role: 'radio', 'aria-checked': String(mode === value), disabled: locked,
-      onClick: () => { if (mode !== value) onChange(value); },
+      onClick: (event) => { if (mode !== value) onChange(value, { x: event.clientX, y: event.clientY }); },
     }, icon(glyph, { small: true }), label)));
   const other = mode === 'pilates' ? 'Palestra' : 'Pilates';
   return [

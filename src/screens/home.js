@@ -44,7 +44,7 @@ export function renderHome(root, { workouts, storage, activeWorkoutId, initial, 
     el('main', {},
       pageHead({ title: pilates ? 'Le tue sequenze' : 'Le tue schede', subtitle }),
       total
-        ? el('div', { className: 'bg-list' }, cards)
+        ? el('div', { className: 'bg-list bg-focuslist' }, cards)
         : emptyState(pilates ? 'Non hai ancora creato sequenze. Tocca + per crearne una.' : 'Non hai ancora creato schede. Tocca + per crearne una.')),
   );
 }
