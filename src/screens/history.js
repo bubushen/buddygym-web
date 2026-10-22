@@ -46,7 +46,24 @@ function sessionCard(session, onOpen, unit) {
     pilates && milestone ? el('span', { className: 'bg-chip' }, icon('star', { small: true }), `Traguardo · ${milestone.title}${more(summary.milestones)}`) : null);
 }
 
-export function renderHistory(root, { year, month, day, filter, calendar, sessions, initial, onAccount, onFilter, onMonth, onDay, onOpen, unit = 'kg' }) {
+function analysisCard(analysis, onOpen) {
+  const result = analysis.result ?? {};
+  const clean = result.clean ?? 0;
+  const total = result.total ?? 0;
+  return el('button', {
+    type: 'button', className: 'bg-dcard', onClick: () => onOpen?.(analysis),
+    'aria-label': `Analisi video, ${analysis.exerciseTitle}: ${clean} su ${total} ripetizioni pulite`,
+  },
+  icon('chevronRight', { small: true, className: 'bg-dcard__chev' }),
+  el('span', { className: 'bg-dcard__top' },
+    el('span', { className: 'bg-mtag bg-mtag--gym', text: 'Analisi video' }),
+    el('span', { text: timeOf(new Date(analysis.analyzedAt)) })),
+  el('h3', { text: analysis.exerciseTitle }),
+  el('div', { className: 'bg-dcard__stats' },
+    el('span', {}, 'Ripetizioni pulite', el('b', { text: `${clean} su ${total}` }))));
+}
+
+export function renderHistory(root, { year, month, day, filter, calendar, sessions, analyses = [], initial, onAccount, onFilter, onMonth, onDay, onOpen, onOpenAnalysis, unit = 'kg' }) {
   const now = new Date();
   const isThisMonth = now.getFullYear() === year && now.getMonth() === month;
   const first = new Date(year, month, 1);
@@ -64,7 +81,7 @@ export function renderHistory(root, { year, month, day, filter, calendar, sessio
   }
   const selectedDate = new Date(year, month, day);
   const isToday = isThisMonth && now.getDate() === day;
-  const panel = sessions.length
+  const dayPanel = sessions.length
     ? [
       el('div', { className: 'bg-dayhead' }, el('h2', { text: longDay(selectedDate) }), el('span', { text: `${count(sessions.length)}${isToday ? ' · oggi' : ''}` })),
       el('div', { className: 'bg-daylist bg-focuslist' }, sessions.map((session) => sessionCard(session, onOpen, unit))),
@@ -73,6 +90,13 @@ export function renderHistory(root, { year, month, day, filter, calendar, sessio
       el('div', { className: 'bg-dayhead' }, el('h2', { text: longDay(selectedDate) }), el('span', { text: isToday ? 'oggi' : 'riposo' })),
       el('div', { className: 'bg-dayempty' }, el('b', { text: 'Nessun allenamento' }), 'Giorno di riposo. Tocca un giorno colorato per vedere cosa hai fatto.'),
     ];
+  const analysisPanel = analyses.length
+    ? [
+      el('div', { className: 'bg-dayhead' }, el('h2', { text: 'Analisi video' }), el('span', { text: `${analyses.length} analisi` })),
+      el('div', { className: 'bg-daylist bg-focuslist' }, analyses.map((analysis) => analysisCard(analysis, onOpenAnalysis))),
+    ]
+    : [];
+  const panel = [...dayPanel, ...analysisPanel];
   const trainingDays = calendar.trainingDays;
   root.replaceChildren(
     appBar({ initial, onAccount, showAdd: false, title: 'Storico' }),

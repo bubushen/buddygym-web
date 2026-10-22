@@ -27,6 +27,9 @@
   --on-mode-gym: var(--lime-100);
   --mode-pilates: var(--blush-300);
   --on-mode-pilates: #3a2340;
+  /* Avvisi di esecuzione nell'analisi video e nel tracciamento: uguali in tutti i temi. */
+  --warning: #ffb020;
+  --on-warning: #2b1a00;
 
   /* Token semantici · tema scuro (principale) */
   --surface: var(--forest-900);

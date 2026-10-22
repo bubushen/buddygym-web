@@ -40,6 +40,10 @@ import { displayNumber, formatWeight, fromInput, roundIncrement, toDisplay, unit
 import { SESSIONS_KEY, backfillSessions, calendarMonth, daySessions, defaultDay, loadSessions, sessionFromSummary, sessionMode, upsertSession } from './sessions.js';
 import { createCoachUI } from './coach-ui.js';
 import { renderCoachChatThread } from './screens/coach-chat.js';
+import { renderAnalysisPlayer, renderAnalysisProgress, renderAnalysisResult, renderAnalysisUpload } from './screens/video-analysis.js';
+import { analyzeReps, preflightProblem, repWarning, segmentReps } from './rep-analysis.js';
+import { ANALYSES_KEY, analysesOnDay, coachShareText, loadAnalyses, loadCloudAnalyses, mergeAnalyses, saveAnalysis, uploadAnalysis } from './video-analyses.js';
+import { loadCoachLinks, sendMessage } from './coach-chat.js';
 import { canCompressVideo, compressVideo } from './video-compress.js';
 import { keepFrameFitted } from './video-frame.js';
 import { renderHome as renderHomeScreen } from './screens/home.js';
@@ -203,6 +207,8 @@ let currentReference;
 // 'builtin' (curl incluso), 'personal' (video dell'atleta) o 'coach'.
 let currentReferenceSource = null;
 let referenceUrl;
+// Percorso «Analisi video»: vive finché si resta nella rotta #/analisi/…
+let analysisFlow = null;
 const screens = {
   welcome: document.querySelector('#welcomeScreen'),
   access: document.querySelector('#accessScreen'),
@@ -219,6 +225,7 @@ const screens = {
   alias: document.querySelector('#aliasScreen'),
   summary: document.querySelector('#summaryScreen'),
   history: document.querySelector('#historyScreen'),
+  videoAnalysis: document.querySelector('#videoAnalysisScreen'),
   social: document.querySelector('#socialScreen'),
   post: document.querySelector('#postScreen'),
   friend: document.querySelector('#friendScreen'),
@@ -424,6 +431,20 @@ function renderProfileScreen() {
   });
 }
 
+async function mergeCloudAnalyses(userId) {
+  if (!cloudClient || !deviceStorage) return;
+  const target = storage ?? deviceStorage;
+  try {
+    const remote = await loadCloudAnalyses(cloudClient, userId);
+    if (cloudUser?.id !== userId) return;
+    const merged = mergeAnalyses(loadAnalyses(target), remote);
+    try { target.setItem(ANALYSES_KEY, JSON.stringify(merged)); } catch { /* Restano quelle già in memoria. */ }
+    if (screens.history && !screens.history.hidden) renderHistoryScreen();
+  } catch (error) {
+    console.error('BUDDYGYM analyses merge failed', error);
+  }
+}
+
 async function loadAccountProfile(userId) {
   profileOwnerId = userId;
   try {
@@ -531,6 +552,7 @@ async function handleAuthSession(session) {
     storage = accountStorage(deviceStorage, user.id, scheduleCloudSync);
     workouts = loadWorkouts(storage);
     activeWorkout = loadActiveWorkout(storage, workouts);
+    void mergeCloudAnalyses(user.id);
     renderRoute();
     accountMessage('Caricamento delle tue schede…');
     try {
@@ -1543,10 +1565,13 @@ function renderHistoryScreen() {
     list.push(`${sessionMode(item) === 'pilates' ? 'Pilates' : 'palestra'} ${item.title}`);
     calendar.titles.set(date.getDate(), list);
   }
+  const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(historyState.day).padStart(2, '0')}`;
+  const analyses = analysesOnDay(loadAnalyses(analysisStorage()), dayKey);
   renderHistoryView(screens.history, {
     year, month, filter, calendar,
     day: historyState.day,
     sessions: daySessions(sessions, { year, month, day: historyState.day, filter }),
+    analyses,
     initial: accountInitial(),
     unit: settings.unit,
     onAccount: () => openRoute('#/account'),
@@ -1560,6 +1585,7 @@ function renderHistoryScreen() {
       renderHistoryScreen();
     },
     onOpen: (session) => openRoute(`#/storico/${encodeURIComponent(session.id)}`),
+    onOpenAnalysis: (analysis) => openRoute(`#/storico/analisi/${encodeURIComponent(analysis.id)}`),
   });
   refreshFocusList();
 }
@@ -1919,11 +1945,11 @@ function renderCoachingLocked() {
       uiButton({ label: 'Accedi', onClick: () => openRoute('#/account') })));
 }
 
-const TAB_SCREENS = { home: 'schede', history: 'storico', nutrition: 'nutrizione', coachingLocked: 'coaching', coach: 'coaching', coachChat: 'coaching', social: 'social', friends: 'social', leaderboard: 'social' };
+const TAB_SCREENS = { home: 'schede', history: 'storico', videoAnalysis: 'schede', nutrition: 'nutrizione', coachingLocked: 'coaching', coach: 'coaching', coachChat: 'coaching', social: 'social', friends: 'social', leaderboard: 'social' };
 // Pallino sulla voce Social: nuovi commenti o «Forza» non ancora visti.
 let socialUnread = false;
 // Schermate già passate al nuovo design: senza la vecchia intestazione.
-const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'forgot', 'settings', 'deleteAccount', 'summary', 'coach', 'coachChat', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
+const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'forgot', 'settings', 'deleteAccount', 'summary', 'coach', 'coachChat', 'history', 'videoAnalysis', 'social', 'post', 'friend', 'friends', 'leaderboard']);
 
 // Tab bar (MicroInteractions): la pill scivola alla nuova voce (300 ms, molla), la pagina
 // arriva in dissolvenza (150 ms), vibrazione leggera al tocco.
@@ -2628,20 +2654,19 @@ function renderExerciseNav(workout, exercise) {
   nav.hidden = false;
 }
 
-// Il riquadro dell'analisi video si apre dalla card «Carica e analizza il tuo video».
-let openedAnalysisKey = null;
-function setAnalysisOpen(open) {
-  document.querySelector('#analysisPanel').hidden = !open;
-  document.querySelector('#openAnalysisButton').setAttribute('aria-expanded', String(open));
-  openedAnalysisKey = open ? activeExerciseKey : null;
-}
+// «Carica e analizza il tuo video» apre il percorso a quattro schermate. Il vecchio
+// riquadro in linea resta nel DOM (nascosto) perché condivide le funzioni del riferimento.
 document.querySelector('#openAnalysisButton').addEventListener('click', () => {
-  const opening = document.querySelector('#analysisPanel').hidden;
-  setAnalysisOpen(opening);
-  if (!opening) return;
-  document.querySelector('#analysisPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  // Con un riferimento disponibile si apre subito la scelta del video.
-  if (!document.querySelector('#analysisSection').hidden && !attemptFile) videoInput.click();
+  const parts = window.location.hash.split('/');
+  const workout = workouts.find((item) => item.id === parts[2] && !item.deleted);
+  const exercise = workout?.exercises.find((item) => item.id === parts[3]);
+  if (!workout || !exercise) return;
+  // Pilates: analisi rimandata, il pulsante non apre il flusso.
+  if (exercise.mode === 'pilates') {
+    toast('L’analisi video per Pilates arriverà presto.');
+    return;
+  }
+  openRoute(`#/analisi/${workout.id}/${exercise.id}`);
 });
 
 function renderExercise(workout, exercise) {
@@ -2674,11 +2699,12 @@ function renderExercise(workout, exercise) {
   document.querySelector('#targetUnit').textContent = timed ? 'minuti' : 'ripetizioni';
   document.querySelector('#referenceSection').hidden = true;
   document.querySelector('#curlInstructions').hidden = !curl || (assigned && !!exercise.instructions);
+  // Il risultato dell'analisi vive nella rotta #/analisi/…: in linea resta nascosto.
+  document.querySelector('#analysisPanel').hidden = true;
   document.querySelector('#analysisSection').hidden = true;
   document.querySelector('#resultSection').hidden = true;
   document.querySelector('#genericVideoNote').hidden = true;
   document.querySelector('#logHeading').textContent = timed ? 'Il tuo tempo' : 'Le tue serie';
-  if (exerciseKey !== openedAnalysisKey) setAnalysisOpen(false);
   renderExerciseNav(workout, exercise);
   document.querySelector('#editExerciseButton').onclick = () => openRoute(`#/modifica-esercizio/${workout.id}/${exercise.id}`);
   document.querySelector('#deleteExerciseButton').onclick = () => deleteExercise(workout.id, exercise.id);
@@ -2867,7 +2893,7 @@ async function loadReferenceForExercise(workout, exercise, curl) {
         referenceVideo.setAttribute('aria-label', 'Video di riferimento del coach');
         document.querySelector('#referenceCaption').textContent = 'Segui il video e le indicazioni del tuo coach.';
         document.querySelector('#referenceSection').hidden = false;
-        for (const id of ['analysisSection', 'resultSection']) document.getElementById(id).hidden = !reference.profile;
+        for (const id of ['analysisSection', 'resultSection']) document.getElementById(id).hidden = true;
         document.querySelector('#genericVideoNote').textContent = 'Il video del coach è disponibile. Il confronto automatico non è stato attivato per questo esercizio.';
         document.querySelector('#genericVideoNote').hidden = !!reference.profile;
         document.querySelector('#analysisDescription').textContent = 'Carica la tua esecuzione, con la stessa inquadratura del riferimento.';
@@ -2939,8 +2965,9 @@ async function loadReferenceForExercise(workout, exercise, curl) {
     void showReferencePose({ packedUrl: BUILTIN_POSE_URL, profile: CURL_EXERCISE.referenceProfile, route });
   }
   document.querySelector('#referenceSection').hidden = !reference && !curl;
-  document.querySelector('#analysisSection').hidden = !reference && !curl;
-  document.querySelector('#resultSection').hidden = !reference && !curl;
+  // Il vecchio risultato in linea non si mostra più: il video dell'utente usa il nuovo flusso.
+  document.querySelector('#analysisSection').hidden = true;
+  document.querySelector('#resultSection').hidden = true;
   document.querySelector('#genericVideoNote').hidden = !!reference || curl;
   if (workout.source !== 'coach') document.querySelector('#genericVideoNote').textContent = 'Per confrontare questo esercizio con le tue esecuzioni, aggiungi un video personale da “Modifica esercizio”. Il confronto misura la somiglianza, non la correttezza tecnica.';
 }
@@ -3021,6 +3048,15 @@ function renderRoute() {
       screen = 'coachingLocked';
       renderCoachingLocked();
     }
+  } else if (parts[1] === 'storico' && parts[2] === 'analisi' && parts[3]) {
+    const analysis = loadAnalyses(analysisStorage()).find((item) => item.id === decodeURIComponent(parts[3]));
+    if (analysis) {
+      screen = 'videoAnalysis';
+      renderSavedAnalysis(analysis);
+    } else {
+      screen = 'history';
+      renderHistoryScreen();
+    }
   } else if (parts[1] === 'storico' && parts[2]) {
     const session = storage ? loadSessions(storage).find((item) => item.id === decodeURIComponent(parts[2])) : null;
     if (session) {
@@ -3060,6 +3096,15 @@ function renderRoute() {
   } else if (parts[1] === 'esercizio' && workout && exercise) {
     screen = 'exercise';
     renderExercise(workout, exercise);
+  } else if (parts[1] === 'analisi' && workout && exercise) {
+    // Pilates: analisi rimandata, anche con un collegamento diretto.
+    if (exercise.mode === 'pilates') {
+      screen = 'exercise';
+      renderExercise(workout, exercise);
+    } else {
+      screen = 'videoAnalysis';
+      renderVideoAnalysis(workout, exercise);
+    }
   } else if (parts[1] === 'riepilogo' && workout && Number.isFinite(Number(parts[3]))) {
     screen = 'summary';
     renderSummaryScreen(workout, Number(parts[3]), Number(parts[4]));
@@ -3090,6 +3135,8 @@ function renderRoute() {
     stopReferencePose();
     if (activeExerciseKey && !working) { releaseAttempt(); activeExerciseKey = undefined; }
   }
+  // Uscendo dalla rotta di analisi si fermano i video e si liberano gli objectURL.
+  if (screen !== 'videoAnalysis') closeAnalysisFlow();
   appScroll.scrollTop = 0;
   refreshFocusList();
 }
@@ -3449,7 +3496,7 @@ function guardGpu(frames) {
 }
 
 // Decodifica in sequenza (veloce, indipendente dalla visibilità del video).
-async function framesByDecoding(file, aspect, description, report, duration) {
+async function framesByDecoding(file, aspect, description, report, duration, onProgress) {
   const frames = [];
   const streamStart = startDetectionStream();
   let lastReport = -1;
@@ -3460,6 +3507,7 @@ async function framesByDecoding(file, aspect, description, report, duration) {
       frames.push({ time, aspect, landmarks: detection.landmarks?.[0] ?? null });
       guardGpu(frames);
       if (Math.round(time) !== lastReport) { lastReport = Math.round(time); report(`${description} · ${lastReport} / ${Math.round(duration)} s`); }
+      onProgress?.(duration > 0 ? Math.min(1, time / duration) : 0);
     },
   });
   if (!frames.length) throw new Error('Nessun fotogramma decodificato.');
@@ -3467,7 +3515,7 @@ async function framesByDecoding(file, aspect, description, report, duration) {
 }
 
 // Ripiego: si posiziona il video su ogni istante. Più lento, ma funziona con ogni formato.
-async function framesBySeeking(media, aspect, description, report) {
+async function framesBySeeking(media, aspect, description, report, onProgress) {
   // iOS non decodifica i fotogrammi di un video mai avviato: lo si avvia un istante.
   if (media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     try { await media.play(); } catch { /* Il salto successivo carica comunque il fotogramma. */ }
@@ -3482,6 +3530,7 @@ async function framesBySeeking(media, aspect, description, report) {
     frames.push({ time, aspect, landmarks: detection.landmarks?.[0] ?? null });
     guardGpu(frames);
     report(`${description} · ${Math.round(time)} / ${Math.round(media.duration)} s`);
+    onProgress?.(media.duration > 0 ? Math.min(1, time / media.duration) : 0);
   }
   return frames;
 }
@@ -3496,13 +3545,13 @@ async function collectFrames(media, description, options = {}) {
     try {
       if (options.file && canDecodeSequentially()) {
         try {
-          return await framesByDecoding(options.file, aspect, description, report, media.duration);
+          return await framesByDecoding(options.file, aspect, description, report, media.duration, options.onProgress);
         } catch (error) {
           if (error instanceof GpuFailure) throw error;
           console.warn('BUDDYGYM sequential decoding unavailable, seeking instead', error);
         }
       }
-      return await framesBySeeking(media, aspect, description, report);
+      return await framesBySeeking(media, aspect, description, report, options.onProgress);
     } catch (error) {
       if (!(error instanceof GpuFailure) || attempt > 0) throw error;
       await fallBackToCpu();
@@ -3652,5 +3701,468 @@ async function analyzeAttempt() {
     video.controls = true;
     videoInput.disabled = false;
     refreshButton();
+  }
+}
+
+// ── Analisi video: flusso a quattro schermate ─────────────────────────────────
+// Il video dell'utente vive solo in questa rotta; alla fine si salva il risultato,
+// mai il filmato. Le schermate sono in src/screens/video-analysis.js.
+const ANALYSIS_TECHNICAL_ERROR = Object.freeze({
+  title: 'Analisi non riuscita',
+  advice: 'Riprova; se succede ancora, riavvia l’app.',
+});
+
+function analysisStorage() { return storage ?? deviceStorage; }
+
+function analysisDateLabel(at) {
+  return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' })
+    .format(new Date(at)).replace('.', '');
+}
+
+function analysisSteps(count = null) {
+  return [
+    { label: 'Persona trovata', done: false },
+    { label: count ? `${count} ${count === 1 ? 'ripetizione contata' : 'ripetizioni contate'}` : 'Ripetizioni contate', done: false },
+    { label: 'Confronto col riferimento', done: false },
+  ];
+}
+
+function stopAnalysisMedia(flow) {
+  flow?.preview?.pause?.();
+  flow?.player?.video?.pause?.();
+  if (flow?.url) URL.revokeObjectURL(flow.url);
+}
+
+function closeAnalysisFlow() {
+  if (!analysisFlow) return;
+  analysisFlow.token += 1;
+  stopAnalysisMedia(analysisFlow);
+  analysisFlow = null;
+}
+
+// Riferimento dell'esercizio: personale, del coach o quello fisso del curl.
+async function resolveAnalysisReference(workout, exercise) {
+  const curl = curlVariant(exercise) !== null;
+  let reference = null;
+  let source = null;
+  if (workout.source === 'coach') {
+    const coach = exercise.coachReference;
+    if (coach?.profile) { reference = coach; source = 'coach'; }
+    else if (coach?.builtin === 'curl') { reference = CURL_EXERCISE.referenceProfile; source = 'builtin'; }
+  } else {
+    const local = await getPersonalReference(personalReferenceId(exercise.id)).catch(() => null);
+    const saved = exercise.reference?.profile ? exercise.reference : null;
+    const personal = local?.profile ? local : saved;
+    if (personal) { reference = personal; source = 'personal'; }
+    else if (curl) { reference = CURL_EXERCISE.referenceProfile; source = 'builtin'; }
+  }
+  if (!reference) return null;
+  const profile = reference.profile ?? reference;
+  const kind = profile?.side ? 'curl' : profile?.joints?.length ? 'generic' : curl ? 'curl' : 'generic';
+  let packed = null;
+  try {
+    if (source === 'builtin') packed = await fetch(BUILTIN_POSE_URL).then((response) => (response.ok ? response.json() : null));
+    else if (source === 'personal') packed = await getCachedPose(poseKey(reference)).catch(() => null);
+    else if (source === 'coach' && reference.path) packed = await getCachedPose(`path:${reference.path}`).catch(() => null);
+  } catch { /* Le linee del riferimento sono facoltative. */ }
+  return { profile, kind, source, reference, frames: unpackFrames(packed) ?? [] };
+}
+
+function startAnalysisFlow(workout, exercise) {
+  closeAnalysisFlow();
+  const flow = {
+    key: `#/analisi/${workout.id}/${exercise.id}`,
+    token: 0,
+    workoutId: workout.id,
+    exerciseId: exercise.id,
+    exerciseTitle: exercise.title,
+    targetReps: Number(exercise.reps) > 0 ? Number(exercise.reps) : null,
+    step: 'upload',
+    file: null,
+    url: null,
+    preview: null,
+    video: null,
+    frames: [],
+    result: null,
+    analysis: null,
+    reference: null,
+    kind: 'curl',
+    referenceFrames: [],
+    selected: null,
+    update: null,
+    progressState: null,
+    player: null,
+    playerView: null,
+    coachLinks: null,
+  };
+  analysisFlow = flow;
+  flow.referencePromise = resolveAnalysisReference(workout, exercise)
+    .catch((error) => { console.warn('BUDDYGYM analysis reference unavailable', error); return null; });
+  if (cloudUser && cloudClient && !demoPreview) {
+    loadCoachLinks(cloudClient, cloudUser.id).then((links) => {
+      if (analysisFlow !== flow) return;
+      flow.coachLinks = links.filter((link) => link.status === 'accepted' && link.role === 'client');
+      if (flow.step === 'result') renderAnalysisResultStep();
+    }).catch((error) => {
+      console.warn('BUDDYGYM coach links unavailable', error);
+      if (analysisFlow === flow) flow.coachLinks = [];
+    });
+  } else {
+    flow.coachLinks = [];
+  }
+  return flow;
+}
+
+function renderVideoAnalysis(workout, exercise) {
+  const route = `#/analisi/${workout.id}/${exercise.id}`;
+  if (!analysisFlow || analysisFlow.key !== route) startAnalysisFlow(workout, exercise);
+  if (analysisFlow.step === 'progress') renderAnalysisProgressStep();
+  else if (analysisFlow.step === 'player') renderAnalysisPlayerStep();
+  else if (analysisFlow.step === 'result') renderAnalysisResultStep();
+  else renderAnalysisUploadStep();
+}
+
+function renderAnalysisUploadStep() {
+  const flow = analysisFlow;
+  if (!flow) return;
+  flow.step = 'upload';
+  renderAnalysisUpload(screens.videoAnalysis, {
+    exerciseTitle: flow.exerciseTitle,
+    onBack: () => openRoute(`#/esercizio/${flow.workoutId}/${flow.exerciseId}`),
+    onRecord: () => pickAnalysisVideo(true),
+    onGallery: () => pickAnalysisVideo(false),
+  });
+}
+
+function pickAnalysisVideo(capture) {
+  const flow = analysisFlow;
+  if (!flow) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'video/*';
+  input.hidden = true;
+  if (capture) input.setAttribute('capture', 'environment');
+  input.addEventListener('change', () => {
+    const file = input.files?.[0] ?? null;
+    input.remove();
+    if (file && analysisFlow === flow) void beginAnalysis(file);
+  }, { once: true });
+  input.addEventListener('cancel', () => input.remove(), { once: true });
+  document.body.append(input);
+  input.click();
+}
+
+async function mediaMetadata(media) {
+  if (media.readyState >= HTMLMediaElement.HAVE_METADATA && media.videoWidth) return;
+  await new Promise((resolve, reject) => {
+    media.addEventListener('loadedmetadata', resolve, { once: true });
+    media.addEventListener('error', () => reject(new Error(UNREADABLE_VIDEO)), { once: true });
+    media.load();
+  });
+}
+
+async function beginAnalysis(file) {
+  const flow = analysisFlow;
+  if (!flow) return;
+  if (!file.type.startsWith('video/')) { toast('Seleziona un file video.'); return; }
+  if (flow.url) URL.revokeObjectURL(flow.url);
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.src = url;
+  Object.assign(flow, {
+    file, url, preview: video, video, step: 'progress',
+    frames: [], result: null, analysis: null, selected: null,
+    player: null, playerView: null, update: null,
+    progressState: { progress: 0, steps: analysisSteps(), error: null },
+  });
+  renderAnalysisProgressStep();
+  const token = flow.token;
+  try {
+    await mediaMetadata(video);
+    if (analysisFlow !== flow || flow.token !== token) return;
+    if (!video.videoWidth || !video.videoHeight) {
+      setAnalysisProgress({ error: ANALYSIS_TECHNICAL_ERROR });
+      return;
+    }
+    if (!Number.isFinite(video.duration) || video.duration <= 0) {
+      setAnalysisProgress({ error: ANALYSIS_TECHNICAL_ERROR });
+      return;
+    }
+    // Oltre 60 secondi si ferma subito, senza estrarre i fotogrammi.
+    if (video.duration > 60) {
+      setAnalysisProgress({
+        progress: 0,
+        error: { id: 'tooLong', title: 'Video troppo lungo', advice: 'Registra al massimo 60 secondi, da 1 a 12 ripetizioni.' },
+      });
+      return;
+    }
+    await withScreenOn(() => runAnalysisFlow(flow));
+  } catch (error) {
+    console.error('BUDDYGYM video metadata failed', error);
+    if (analysisFlow === flow && flow.token === token) setAnalysisProgress({ error: ANALYSIS_TECHNICAL_ERROR });
+  }
+}
+
+function renderAnalysisProgressStep() {
+  const flow = analysisFlow;
+  if (!flow?.preview) { renderAnalysisUploadStep(); return; }
+  const view = renderAnalysisProgress(screens.videoAnalysis, {
+    preview: flow.preview,
+    onBack: () => openRoute(`#/esercizio/${flow.workoutId}/${flow.exerciseId}`),
+    onRetry: () => resetAnalysisToUpload(),
+  });
+  flow.update = view.update;
+  view.update(flow.progressState);
+}
+
+function setAnalysisProgress(next) {
+  const flow = analysisFlow;
+  if (!flow) return;
+  flow.progressState = { ...flow.progressState, ...next };
+  flow.update?.(flow.progressState);
+}
+
+function resetAnalysisToUpload() {
+  const flow = analysisFlow;
+  if (!flow) return;
+  flow.token += 1;
+  stopAnalysisMedia(flow);
+  Object.assign(flow, {
+    file: null, url: null, preview: null, video: null,
+    frames: [], result: null, analysis: null, selected: null,
+    player: null, playerView: null, update: null, progressState: null,
+  });
+  renderAnalysisUploadStep();
+}
+
+async function runAnalysisFlow(flow) {
+  const token = flow.token;
+  const current = () => analysisFlow === flow && flow.token === token;
+  try {
+    const referenceInfo = await flow.referencePromise;
+    if (!current()) return;
+    if (!referenceInfo) {
+      setAnalysisProgress({
+        error: {
+          id: 'noReference',
+          title: 'Serve un video di riferimento',
+          advice: 'Aggiungi un tuo video di riferimento da “Modifica esercizio” e riprova.',
+        },
+      });
+      return;
+    }
+    flow.reference = referenceInfo;
+    flow.kind = referenceInfo.kind;
+    flow.referenceFrames = referenceInfo.frames;
+    const ruleProfile = { ...referenceInfo.profile, exerciseId: flow.exerciseId, exerciseTitle: flow.exerciseTitle };
+    const rule = exerciseRule(ruleProfile, flow.kind);
+    const allFrames = await withLandmarker(async () => {
+      await ensureModel();
+      return collectFrames(flow.video, 'Analizzo il movimento', {
+        file: flow.file,
+        showVideo: false,
+        onProgress: (fraction) => {
+          if (current()) setAnalysisProgress({ progress: Math.max(0, Math.min(1, fraction)) * 0.85 });
+        },
+      });
+    });
+    if (!current()) return;
+    const frames = stabilizePoseFrames(allFrames);
+    flow.frames = frames;
+    const problem = preflightProblem(frames, rule, flow.video.duration);
+    if (problem) {
+      const noPerson = problem.id === 'noPerson';
+      setAnalysisProgress({
+        progress: 0.85,
+        steps: [
+          { label: 'Persona trovata', done: !noPerson },
+          { label: 'Ripetizioni contate', done: false },
+          { label: 'Confronto col riferimento', done: false },
+        ],
+        error: { title: problem.title, advice: problem.advice },
+      });
+      return;
+    }
+    const count = segmentReps(frames, rule).length;
+    setAnalysisProgress({
+      progress: 0.92,
+      steps: [
+        { label: 'Persona trovata', done: true },
+        { label: `${count} ${count === 1 ? 'ripetizione contata' : 'ripetizioni contate'}`, done: true },
+        { label: 'Confronto col riferimento', done: false },
+      ],
+    });
+    const result = analyzeReps({ frames, rule, reference: referenceInfo.profile, kind: flow.kind });
+    if (!current()) return;
+    const firstIssue = result.reps.find((rep) => !rep.clean) ?? null;
+    flow.result = result;
+    flow.selected = firstIssue?.index ?? null;
+    const analyzedAt = Date.now();
+    const analysis = {
+      id: `${flow.workoutId}:${flow.exerciseId}:${analyzedAt}`,
+      exerciseTitle: flow.exerciseTitle,
+      workoutId: flow.workoutId,
+      exerciseId: flow.exerciseId,
+      analyzedAt,
+      result,
+    };
+    flow.analysis = analysis;
+    saveAnalysis(analysisStorage(), analysis);
+    if (cloudUser && cloudClient && !demoPreview) {
+      const userId = cloudUser.id;
+      uploadAnalysis(cloudClient, userId, analysis)
+        .catch((error) => console.error('BUDDYGYM analysis upload failed', error));
+    }
+    setAnalysisProgress({
+      progress: 1,
+      steps: [
+        { label: 'Persona trovata', done: true },
+        { label: `${count} ${count === 1 ? 'ripetizione contata' : 'ripetizioni contate'}`, done: true },
+        { label: 'Confronto col riferimento', done: true },
+      ],
+      error: null,
+    });
+    flow.step = 'player';
+    renderAnalysisPlayerStep();
+  } catch (error) {
+    console.error('BUDDYGYM video analysis failed', error);
+    if (current()) setAnalysisProgress({ error: ANALYSIS_TECHNICAL_ERROR });
+  }
+}
+
+function analysisRepWarning(rep) {
+  return rep?.issues?.length ? repWarning(rep.issues[0]) : null;
+}
+
+function createAnalysisPlayer() {
+  const flow = analysisFlow;
+  if (!flow?.result || !flow.reference) return null;
+  if (flow.player) return flow.player;
+  const video = flow.video;
+  video.controls = false;
+  video.muted = true;
+  video.playsInline = true;
+  const canvas = document.createElement('canvas');
+  canvas.setAttribute('aria-hidden', 'true');
+  canvas.hidden = true;
+  const overlay = createPoseOverlay(video, canvas);
+  const ruleProfile = { ...flow.reference.profile, exerciseId: flow.exerciseId, exerciseTitle: flow.exerciseTitle };
+  overlay.set(flow.frames, {
+    rule: exerciseRule(ruleProfile, flow.kind),
+    referenceFrames: flow.referenceFrames,
+    targetReps: flow.targetReps,
+    hud: 'training',
+  });
+  flow.player = { video, canvas, overlay };
+  return flow.player;
+}
+
+function renderAnalysisPlayerStep({ selected = analysisFlow?.selected ?? null, seek = null } = {}) {
+  const flow = analysisFlow;
+  if (!flow?.result) { renderAnalysisUploadStep(); return; }
+  const player = createAnalysisPlayer();
+  if (!player) { renderAnalysisUploadStep(); return; }
+  flow.step = 'player';
+  flow.selected = selected;
+  const reps = flow.result.reps ?? [];
+  const current = reps.find((rep) => rep.index === selected) ?? null;
+  const warning = analysisRepWarning(current);
+  if (Number.isFinite(seek)) player.video.currentTime = seek;
+  else if (current) player.video.currentTime = current.start;
+  else player.video.currentTime = 0;
+  flow.playerView = renderAnalysisPlayer(screens.videoAnalysis, {
+    title: `${flow.exerciseTitle} · ${analysisDateLabel(flow.analysis.analyzedAt)}`,
+    video: player.video,
+    canvas: player.canvas,
+    reps,
+    selected,
+    warning,
+    onSelect: (index) => {
+      const rep = reps.find((item) => item.index === index);
+      if (!rep) return;
+      flow.selected = index;
+      player.video.currentTime = rep.start;
+      player.video.play()?.catch?.(() => {});
+      flow.playerView?.select(index, analysisRepWarning(rep));
+    },
+    onBack: () => openRoute(`#/esercizio/${flow.workoutId}/${flow.exerciseId}`),
+    onResult: () => renderAnalysisResultStep(),
+  });
+  player.overlay.draw();
+  flow.playerView.select(selected, warning);
+}
+
+function renderAnalysisResultStep() {
+  const flow = analysisFlow;
+  if (!flow?.analysis) { renderAnalysisUploadStep(); return; }
+  flow.step = 'result';
+  flow.player?.video.pause();
+  const analysis = flow.analysis;
+  const result = analysis.result;
+  const selected = flow.selected;
+  const coaches = Array.isArray(flow.coachLinks) ? flow.coachLinks : [];
+  renderAnalysisResult(screens.videoAnalysis, {
+    overline: `${flow.exerciseTitle.toLocaleUpperCase('it')} · ${analysisDateLabel(analysis.analyzedAt).toLocaleUpperCase('it')}`,
+    result: { ...result, selected },
+    onBack: () => renderAnalysisPlayerStep({ selected }),
+    onRep: (index) => {
+      const rep = result.reps?.find((item) => item.index === index);
+      renderAnalysisPlayerStep({ selected: index, seek: rep?.start ?? null });
+    },
+    onWatch: (at) => {
+      const rep = result.reps?.find((item) => Math.abs(item.start - at) < 0.001)
+        ?? result.reps?.find((item) => item.start >= at)
+        ?? null;
+      renderAnalysisPlayerStep({ selected: rep?.index ?? null, seek: Number.isFinite(at) ? at : rep?.start ?? null });
+    },
+    onReplay: () => renderAnalysisPlayerStep({ selected: null, seek: 0 }),
+    onShare: coaches.length ? shareAnalysisResult : null,
+  });
+}
+
+function renderSavedAnalysis(analysis) {
+  closeAnalysisFlow();
+  const result = analysis.result ?? {};
+  renderAnalysisResult(screens.videoAnalysis, {
+    overline: `${String(analysis.exerciseTitle ?? 'Esercizio').toLocaleUpperCase('it')} · ${analysisDateLabel(analysis.analyzedAt).toLocaleUpperCase('it')}`,
+    result,
+    onBack: () => openRoute('#/storico'),
+    onRep: null,
+    onWatch: null,
+    onReplay: null,
+    onShare: null,
+  });
+}
+
+function shareAnalysisResult() {
+  const flow = analysisFlow;
+  if (!flow?.analysis || !cloudClient || !cloudUser) return;
+  const links = (flow.coachLinks ?? []).filter((link) => link.status === 'accepted' && link.role === 'client');
+  if (!links.length) return;
+  if (links.length === 1) { void sendAnalysisToCoach(flow, links[0]); return; }
+  let view;
+  view = openSheet({
+    label: 'Condividi col coach',
+    content: el('div', { className: 'bg-sheet__body' },
+      el('h2', { text: 'Condividi col coach' }),
+      el('p', { text: 'A chi vuoi inviare il risultato?' }),
+      el('div', { className: 'bg-set-list bg-set-list--sheet' }, links.map((link) => el('button', {
+        type: 'button', className: 'bg-srow',
+        onClick: () => { view.close(); void sendAnalysisToCoach(flow, link); },
+      }, el('span', { text: link.alias }), icon('chevronRight', { small: true }))))),
+  });
+}
+
+async function sendAnalysisToCoach(flow, link) {
+  if (!cloudClient || !cloudUser) { toast('Non inviato. Riprova.'); return; }
+  try {
+    await sendMessage(cloudClient, cloudUser.id, link.id, coachShareText(flow.analysis, analysisDateLabel(flow.analysis.analyzedAt)));
+    if (analysisFlow === flow) toast(`Inviato a ${link.alias}`);
+  } catch (error) {
+    console.error('BUDDYGYM analysis share failed', error);
+    toast('Non inviato. Riprova.');
   }
 }

@@ -933,3 +933,87 @@ button.bg-srow:disabled { cursor: default; }
 .coach-chat__send:disabled { opacity: var(--exnav-small-opacity); cursor: default; }
 .coach-chat__send:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
 
+/* ——— Analisi video (VideoAnalysisScreen) ————————————————————————————————————————— */
+/* Percorso in quattro schermate: carica, analisi in corso, video analizzato, risultato. */
+.bg-va-head { padding: var(--space-2) var(--space-4) var(--space-5); }
+.bg-va-head--progress { padding-top: var(--space-5); padding-bottom: var(--space-2); }
+.bg-va-head h1 { margin: 0; font: var(--type-screen-title); letter-spacing: var(--track-screen-title); color: var(--ink); }
+.bg-va-sub { margin: var(--space-2) 0 0; font: var(--type-subtitle); color: var(--ink-muted); }
+.bg-va-over { margin: 0 0 var(--space-1); font: var(--type-overline); letter-spacing: var(--track-overline); text-transform: uppercase; color: var(--accent); }
+.bg-va-over--head { margin: 0; padding: var(--space-2) var(--space-4) 0; }
+
+/* Due scelte grandi affiancate: registra (primario) e galleria (outline). */
+.bg-va-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); padding: 0 var(--space-4); }
+.bg-va-action { display: grid; justify-items: center; align-content: center; gap: var(--space-2); min-height: var(--start-height); padding: var(--space-4) var(--space-3); border-radius: var(--radius-lg); border: var(--border-strong) solid transparent; font: var(--type-upload-title); cursor: pointer; text-align: center; }
+.bg-va-action .bg-icon { width: var(--icon-lg); height: var(--icon-lg); }
+.bg-va-action--primary { background: var(--primary); color: var(--on-primary); }
+.bg-va-action--outline { background: var(--surface-raised); color: var(--ink); border-color: var(--line); }
+.bg-va-action:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+
+/* Consigli per una ripresa utile: una card per riga, con la spunta. */
+.bg-va-tips { list-style: none; margin: 0; padding: 0 var(--space-4); display: grid; gap: var(--space-2); }
+.bg-va-tip { display: grid; grid-template-columns: auto 1fr; gap: var(--space-3); align-items: start; padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-raised); border: var(--border-thin) solid var(--line); }
+.bg-va-tip .bg-icon { color: var(--accent); margin-top: var(--space-1); }
+.bg-va-tip b { display: block; font: var(--type-row-name); color: var(--ink); }
+.bg-va-tip small { display: block; margin-top: var(--space-1); font: var(--type-caption); color: var(--ink-muted); }
+
+/* Anteprima dell'analisi in corso: stesso riquadro arrotondato del player. */
+.bg-va-preview { margin: 0 auto; width: min(calc(100% - 2 * var(--space-4)), calc(56vh * (var(--va-ratio-n, 9) / var(--va-ratio-d, 16)))); aspect-ratio: var(--va-ratio, var(--video-ratio)); border-radius: var(--radius-lg); background: var(--device-black); overflow: hidden; display: grid; }
+.bg-va-preview > * { grid-area: 1 / 1; width: 100%; height: 100%; object-fit: contain; }
+
+/* Barra di avanzamento e passi con spunta. */
+.bg-va-bar { margin: var(--space-5) var(--space-4) 0; height: var(--steps-bar-h); border-radius: var(--radius-pill); background: var(--surface-sunken); overflow: hidden; }
+.bg-va-bar[hidden] { display: none; }
+.bg-va-bar__fill { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--primary); transition: width var(--dur-base) var(--ease-out); }
+.bg-va-steps { list-style: none; margin: var(--space-4) var(--space-4) 0; padding: 0; display: grid; gap: var(--space-2); }
+.bg-va-steps[hidden] { display: none; }
+.bg-va-step { display: grid; grid-template-columns: auto 1fr; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-raised); border: var(--border-thin) solid var(--line); font: var(--type-body); color: var(--ink-muted); }
+.bg-va-step--done { color: var(--ink); }
+.bg-va-step__mark { width: var(--choice-dot); height: var(--choice-dot); flex: none; border-radius: 50%; border: var(--choice-dot-border) solid var(--line); display: grid; place-items: center; color: var(--on-primary); }
+.bg-va-step--done .bg-va-step__mark { background: var(--primary); border-color: transparent; }
+.bg-va-step__mark .bg-icon { width: var(--icon-sm); height: var(--icon-sm); }
+
+/* Avviso warning: stessa forma per l'errore dell'analisi e per la ripetizione da correggere. */
+.bg-va-warn { margin: var(--space-3) var(--space-4) 0; padding: var(--space-4); border-radius: var(--radius-lg); background: var(--warning); color: var(--on-warning); display: grid; gap: var(--space-1); }
+.bg-va-warn[hidden] { display: none; }
+.bg-va-warn b { font: var(--type-row-name); }
+.bg-va-warn span { font: var(--type-subtitle); }
+
+/* Player: video con il canvas sovrapposto, poi i comandi (il video è senza controlli nativi). */
+.bg-va-stage { position: relative; margin: 0 auto; width: min(calc(100% - 2 * var(--space-4)), calc(56vh * (var(--va-ratio-n, 9) / var(--va-ratio-d, 16)))); aspect-ratio: var(--va-ratio, var(--video-ratio)); border-radius: var(--radius-lg); background: var(--device-black); border: var(--border-thin) solid var(--line); overflow: hidden; display: grid; }
+.bg-va-stage video { width: 100%; height: 100%; object-fit: contain; grid-area: 1 / 1; }
+.bg-va-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.bg-va-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); margin: var(--space-3) var(--space-4) 0; }
+.bg-va-play { width: var(--control); height: var(--control); flex: none; border-radius: 50%; border: 0; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.bg-va-play:focus-visible, .bg-va-speed:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+.bg-va-play .bg-icon-fill, .bg-va-play .bg-icon { width: var(--icon-sm); height: var(--icon-sm); }
+.bg-va-seek { width: 100%; min-width: 0; accent-color: var(--primary); }
+.bg-va-time { font: var(--type-label); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.bg-va-speed { height: var(--control-sm); padding: 0 var(--space-3); border-radius: var(--radius-pill); border: var(--border-thin) solid var(--line); background: var(--surface-raised); color: var(--ink); font: var(--type-button-sm); cursor: pointer; white-space: nowrap; }
+
+/* Caselle delle ripetizioni: olive se pulita, warning se no, anello scuro se selezionata. */
+.bg-va-reps { display: flex; flex-wrap: nowrap; gap: var(--space-2); margin: 0 var(--space-4); }
+/* Fino a 12 caselle restano su una riga: si stringono solo quando serve. */
+.bg-va-rep { flex: 0 1 var(--control); min-width: 0; height: var(--control); padding: 0; border-radius: var(--radius-md); border: var(--border-strong) solid transparent; background: var(--olive-300); color: var(--forest-900); font: var(--type-set-num); font-variant-numeric: tabular-nums; cursor: pointer; }
+.bg-va-rep--warn { background: var(--warning); color: var(--on-warning); }
+.bg-va-rep[aria-pressed="true"] { outline: var(--focus-width) solid var(--ink); outline-offset: var(--focus-width); }
+.bg-va-rep:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+
+/* Pulsante primario in fondo (player e risultato). */
+.bg-va-foot { display: grid; gap: var(--space-3); padding: var(--space-5) var(--space-4) var(--space-6); }
+
+/* Risultato: numero grande, sezioni cosa va bene / da migliorare. */
+.bg-va-score { display: flex; align-items: baseline; gap: var(--space-3); padding: var(--space-2) var(--space-4) var(--space-4); }
+.bg-va-score b { font: var(--type-bigtime); letter-spacing: var(--track-bigtime); font-variant-numeric: tabular-nums; color: var(--ink); }
+.bg-va-score span { font: var(--type-card-title); letter-spacing: var(--track-card-title); color: var(--ink); }
+.bg-va-good, .bg-va-improve { list-style: none; margin: 0; padding: 0 var(--space-4); display: grid; gap: var(--space-2); }
+.bg-va-good li { display: grid; grid-template-columns: auto 1fr; gap: var(--space-3); align-items: start; padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-raised); border: var(--border-thin) solid var(--line); }
+.bg-va-good .bg-icon { color: var(--accent); margin-top: var(--space-1); }
+.bg-va-good b, .bg-va-improve b { display: block; font: var(--type-row-name); color: var(--ink); }
+.bg-va-good small, .bg-va-improve small { display: block; margin-top: var(--space-1); font: var(--type-caption); color: var(--ink-muted); }
+.bg-va-improve li { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-3); align-items: start; padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-raised); border: var(--border-thin) solid var(--line); }
+.bg-va-improve__dot { width: var(--tab-dot); height: var(--tab-dot); flex: none; margin-top: var(--space-1); border-radius: 50%; background: var(--warning); }
+.bg-va-improve__go { align-self: center; }
+.bg-va-foot--result { padding-top: var(--space-6); }
+.bg-va-reps + .bg-va-foot, .bg-va-good + .bg-va-foot, .bg-va-improve + .bg-va-foot { padding-top: var(--space-6); }
+
