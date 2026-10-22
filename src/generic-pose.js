@@ -11,13 +11,47 @@ export const JOINTS = [
   { name: 'ginocchio destro', points: [24, 26, 28] },
 ];
 
-function angle(a, b, c, aspect = 1) {
-  if (![a, b, c].every((point) => point && (point.visibility ?? 0) >= 0.5)) return null;
-  const first = [(a.x - b.x) * aspect, a.y - b.y];
-  const second = [(c.x - b.x) * aspect, c.y - b.y];
+// Angolo interno in gradi tra i due segmenti che si incontrano in `points[1]`.
+// L'aspetto corregge le proporzioni dei fotogrammi non quadrati, come nel confronto.
+export function jointAngle(landmarks, points, aspect = 1) {
+  const [a, b, c] = points;
+  const firstPoint = landmarks?.[a];
+  const center = landmarks?.[b];
+  const lastPoint = landmarks?.[c];
+  if (![firstPoint, center, lastPoint].every((point) => point && (point.visibility ?? 0) >= 0.5)) return null;
+  const first = [(firstPoint.x - center.x) * aspect, firstPoint.y - center.y];
+  const second = [(lastPoint.x - center.x) * aspect, lastPoint.y - center.y];
   const length = Math.hypot(...first) * Math.hypot(...second);
   if (length < 1e-6) return null;
   return Math.acos(Math.max(-1, Math.min(1, (first[0] * second[0] + first[1] * second[1]) / length))) * 180 / Math.PI;
+}
+
+// Verso del movimento più rapido nel riferimento: di solito è la fase concentrica.
+// Se salita e discesa hanno velocità simili, non è deducibile (null).
+function jointDirection(frames, joint, geometry) {
+  let up = 0;
+  let upTime = 0;
+  let down = 0;
+  let downTime = 0;
+  let previous = null;
+  for (const frame of frames) {
+    const value = jointAngle(frame.landmarks, joint.points, frameAspect(frame, geometry));
+    if (value === null) { previous = null; continue; }
+    if (previous) {
+      const interval = frame.time - previous.time;
+      if (interval > 0) {
+        const delta = value - previous.value;
+        if (delta > 0) { up += delta; upTime += interval; }
+        else if (delta < 0) { down -= delta; downTime += interval; }
+      }
+    }
+    previous = { time: frame.time, value };
+  }
+  const upSpeed = upTime ? up / upTime : 0;
+  const downSpeed = downTime ? down / downTime : 0;
+  if (upSpeed > downSpeed * 1.2) return 'up';
+  if (downSpeed > upSpeed * 1.2) return 'down';
+  return null;
 }
 
 function percentile(sorted, portion) {
@@ -25,14 +59,20 @@ function percentile(sorted, portion) {
 }
 
 function summarizeJoint(frames, joint, geometry) {
-  const values = frames.map((frame) => {
-    const points = joint.points.map((index) => frame.landmarks?.[index]);
-    return angle(...points, frameAspect(frame, geometry));
-  }).filter((value) => value !== null).sort((a, b) => a - b);
+  const values = frames.map((frame) => jointAngle(frame.landmarks, joint.points, frameAspect(frame, geometry)))
+    .filter((value) => value !== null).sort((a, b) => a - b);
   if (values.length < Math.max(8, frames.length * 0.35)) return null;
   const min = percentile(values, 0.1);
   const max = percentile(values, 0.9);
-  return { name: joint.name, min, max, range: max - min, coverage: values.length / frames.length };
+  return {
+    name: joint.name,
+    min,
+    max,
+    range: max - min,
+    coverage: values.length / frames.length,
+    // Solo per il disegno: non entra nel confronto tra riferimento ed esecuzione.
+    concentric: jointDirection(frames, joint, geometry),
+  };
 }
 
 export function profileMovement(frames) {

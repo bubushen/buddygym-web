@@ -209,6 +209,21 @@ body { background: var(--surface); color: var(--ink); font-family: var(--font-sa
 .bg-video canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .bg-video--placeholder { display: none; }
 #referenceSection[hidden] + .bg-video--placeholder { display: grid; }
+/* HUD del tracciamento: legenda alla prima analisi, contatore e indicazione poi. */
+.bg-pose-hud { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: var(--space-3); pointer-events: none; }
+.bg-pose-hud[hidden] { display: none; }
+.bg-pose-hud--legend { justify-content: flex-end; padding-bottom: calc(var(--space-6) * 2); }
+.bg-pose-hud__top { display: flex; align-items: center; gap: var(--space-2); align-self: flex-start; max-width: 100%; }
+.bg-pose-hud__reps, .bg-pose-hud__cue { display: inline-flex; align-items: center; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); font: var(--type-label); white-space: nowrap; }
+.bg-pose-hud__reps { background: var(--forest-900); color: var(--lime-100); }
+.bg-pose-hud__cue { background: var(--lime-100); color: var(--forest-900); }
+.bg-pose-hud--legend .bg-pose-hud__top, .bg-pose-hud--training .bg-pose-hud__legend { display: none; }
+.bg-pose-hud__legend { display: flex; align-items: center; justify-content: space-around; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-pill); background: var(--forest-900); color: var(--lime-100); opacity: .92; }
+.bg-pose-hud__key { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-caption); white-space: nowrap; }
+.bg-pose-hud__mark { display: inline-block; flex: none; }
+.bg-pose-hud__mark--ref { width: var(--tab-dot); height: var(--tab-dot); border-radius: 50%; background: white; }
+.bg-pose-hud__mark--zone { width: var(--space-4); height: var(--tab-dot); border-radius: var(--radius-pill); background: var(--olive-300); }
+.bg-pose-hud__mark--you { width: var(--tab-dot); height: var(--tab-dot); border-radius: 50%; background: var(--lime-100); }
 .bg-reference__label { margin: var(--space-2) var(--space-4) 0; font: var(--type-caption); color: var(--ink-muted); }
 .bg-reference .bg-note { margin-top: var(--space-1); }
 .bg-note { margin: var(--space-2) var(--space-4) 0; font: var(--type-caption); color: var(--ink-muted); }

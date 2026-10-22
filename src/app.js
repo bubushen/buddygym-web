@@ -2,7 +2,8 @@ import { analyzeCurlVideo, compareCurlVideos } from './curl-analysis.js';
 import { CURL_EXERCISE, curlVariant } from './exercise-catalog.js';
 import { analysisGrid, SAMPLE_FPS, stabilizePoseFrames } from './pose-stabilization.js';
 import { canDecodeSequentially, decodeFrames } from './video-decoder.js';
-import { createPoseOverlay, measuredAngles } from './pose-overlay.js';
+import { createPoseOverlay } from './pose-overlay.js';
+import { exerciseRule } from './pose-rules.js';
 import { packFrames, unpackFrames } from './pose-frames.js';
 import { exerciseSummary, loadWorkouts, makeId, migrateLegacyCurlLogs, saveWorkouts, WORKOUT_STORAGE_KEY } from './workouts.js';
 import { ACTIVE_WORKOUT_KEY, formatElapsed, loadActiveWorkout } from './workout-session.js';
@@ -2702,6 +2703,8 @@ function renderExercise(workout, exercise) {
 
 const BUILTIN_POSE_URL = './reference/curl-corretto.pose.json';
 let referencePoseJob = 0;
+// Pose del riferimento già levigate: servono alla sagoma e alla ricerca della posa.
+let referencePoseFrames = [];
 const uploadingReferences = new Set();
 
 function poseKey(reference) {
@@ -2752,6 +2755,7 @@ async function computePose(blob) {
 async function showReferencePose({ key, packedUrl, loadVideo, profile, route }) {
   const job = ++referencePoseJob;
   referenceOverlay.set([]);
+  referencePoseFrames = [];
   setReferencePoseStatus('');
   let packed = null;
   try {
@@ -2768,12 +2772,23 @@ async function showReferencePose({ key, packedUrl, loadVideo, profile, route }) 
   if (job !== referencePoseJob || window.location.hash !== route) return;
   setReferencePoseStatus('');
   const frames = unpackFrames(packed);
-  if (frames) referenceOverlay.set(frames, measuredAngles(profile));
+  if (frames) {
+    const effectiveProfile = profile ?? CURL_EXERCISE.referenceProfile;
+    const kind = effectiveProfile?.side ? 'curl' : effectiveProfile?.joints?.length ? 'generic' : 'curl';
+    const ruleProfile = {
+      ...effectiveProfile,
+      exerciseId: currentExercise?.id,
+      exerciseTitle: currentExercise?.title,
+    };
+    referenceOverlay.set(frames, { rule: exerciseRule(ruleProfile, kind), hud: 'none', trail: false });
+    referencePoseFrames = referenceOverlay.frames();
+  }
 }
 
 function stopReferencePose() {
   referencePoseJob += 1;
   referenceOverlay.set([]);
+  referencePoseFrames = [];
   setReferencePoseStatus('');
 }
 
@@ -3567,6 +3582,14 @@ analyzeButton.addEventListener('click', () => {
   void withScreenOn(analyzeAttempt);
 });
 
+const POSE_LEGEND_KEY = 'buddygym:pose-legend-seen';
+function poseLegendSeen() {
+  try { return deviceStorage?.getItem(POSE_LEGEND_KEY) === '1'; } catch { return false; }
+}
+function markPoseLegendSeen() {
+  try { deviceStorage?.setItem(POSE_LEGEND_KEY, '1'); } catch { /* Resta solo in memoria. */ }
+}
+
 async function analyzeAttempt() {
   working = true;
   refreshButton();
@@ -3590,8 +3613,21 @@ async function analyzeAttempt() {
     showVideo();
     await seekToStart(video);
     video.controls = true;
-    // Linee su tutto il corpo per ogni esercizio; l'angolo sulle articolazioni confrontate.
-    attemptOverlay.set(allFrames, measuredAngles(isGeneric ? referenceProfile : attempt));
+    // Regola di lettura del gesto: articolazioni, zona e verso della concentrica.
+    const ruleProfile = {
+      ...(isGeneric ? referenceProfile : { ...referenceProfile, side: attempt?.side ?? referenceProfile.side }),
+      exerciseId: currentExercise?.id,
+      exerciseTitle: currentExercise?.title,
+    };
+    const rule = exerciseRule(ruleProfile, isGeneric ? 'generic' : 'curl');
+    const firstPoseLegend = !poseLegendSeen();
+    attemptOverlay.set(allFrames, {
+      rule,
+      referenceFrames: referencePoseFrames,
+      targetReps: currentExercise?.reps ?? null,
+      hud: firstPoseLegend ? 'legend' : 'training',
+    });
+    if (firstPoseLegend) markPoseLegendSeen();
     if (isGeneric) {
       setStatus(comparison.ready
         ? currentReferenceSource === 'coach'
@@ -3601,8 +3637,8 @@ async function analyzeAttempt() {
     } else if (comparison.ready) {
       const range = attempt.activeRange;
       setStatus(range
-        ? `Analisi completata. Ho valutato il movimento tra ${range.start.toFixed(1)} e ${range.end.toFixed(1)} s; i gesti fuori da questo intervallo non incidono sul giudizio.${attempt.ignoredBoundary ? ' Un gesto al margine del video è stato escluso perché diverso dagli altri: controlla che non fosse un curl intenzionale.' : ''} Riproduci il video per vedere leve e angoli.${currentReferenceSource === 'coach' ? ' Il confronto usa il video fornito dal coach.' : currentReferenceSource === 'personal' ? ' Il confronto usa il tuo riferimento personale, che non è stato approvato da un coach.' : ''}`
-        : 'Analisi completata. Riproduci il video per vedere leve e angoli.');
+        ? `Analisi completata. Ho valutato il movimento tra ${range.start.toFixed(1)} e ${range.end.toFixed(1)} s; i gesti fuori da questo intervallo non incidono sul giudizio.${attempt.ignoredBoundary ? ' Un gesto al margine del video è stato escluso perché diverso dagli altri: controlla che non fosse un curl intenzionale.' : ''} Riproduci il video per vedere leve e zona.${currentReferenceSource === 'coach' ? ' Il confronto usa il video fornito dal coach.' : currentReferenceSource === 'personal' ? ' Il confronto usa il tuo riferimento personale, che non è stato approvato da un coach.' : ''}`
+        : 'Analisi completata. Riproduci il video per vedere leve e zona.');
     } else {
       setStatus('Il video non mostra un curl completo abbastanza chiaro per il confronto.');
     }
