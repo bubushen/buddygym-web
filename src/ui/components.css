@@ -1017,3 +1017,26 @@ button.bg-srow:disabled { cursor: default; }
 .bg-va-foot--result { padding-top: var(--space-6); }
 .bg-va-reps + .bg-va-foot, .bg-va-good + .bg-va-foot, .bg-va-improve + .bg-va-foot { padding-top: var(--space-6); }
 
+/* ——— Area coach · clienti reali (src/coach-assignments.js) ——————————————————————— */
+#coachScreen .coach-real-tag { font: var(--type-overline); letter-spacing: var(--track-overline); text-transform: uppercase; color: var(--accent); }
+#coachScreen .coach-real-note { margin: var(--space-2) var(--space-4) 0; }
+#coachScreen .coach-real-empty { display: grid; justify-items: center; gap: var(--space-3); }
+#coachScreen .coach-real-head { display: flex; gap: var(--space-2); margin: 0 var(--space-4) var(--space-2); }
+#coachScreen .coach-real-pick { display: grid; gap: var(--space-1); width: 100%; box-sizing: border-box; padding: var(--space-4); border-radius: var(--radius-lg); border: var(--border-thin) solid var(--line); background: var(--surface-raised); color: var(--ink); text-align: left; font: var(--type-body); cursor: pointer; }
+#coachScreen .coach-real-pick:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+#coachScreen .coach-real-pick strong { font: var(--type-row-name); }
+#coachScreen .coach-real-pick small { font: var(--type-caption); color: var(--ink-muted); }
+#coachScreen .coach-real-progress { gap: var(--space-2); }
+#coachScreen .coach-real-sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+#coachScreen .coach-real-sessions li { display: flex; justify-content: space-between; gap: var(--space-3); font: var(--type-caption); color: var(--ink-muted); }
+#coachScreen .coach-real-sets { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+#coachScreen .coach-real-sets li { display: grid; gap: var(--space-1); }
+#coachScreen .coach-real-sets li + li { padding-top: var(--space-2); border-top: var(--border-thin) solid var(--line); }
+#coachScreen .coach-real-sets li span { font: var(--type-row-name); color: var(--ink); }
+#coachScreen .coach-real-sets li small { font: var(--type-caption); color: var(--ink-muted); }
+
+
+/* Schede assegnate dal coach nella Home: etichetta e pallino «Nuova». */
+.bg-card__coach { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); padding-right: var(--space-6); }
+.bg-card__new { display: inline-flex; align-items: center; gap: var(--space-1); height: var(--mtag-h); padding: 0 var(--mtag-pad); border-radius: var(--radius-pill); font: var(--type-mtag); letter-spacing: var(--track-mtag); background: var(--surface-sunken); color: var(--ink); }
+.bg-card__new::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }

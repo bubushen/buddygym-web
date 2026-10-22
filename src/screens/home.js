@@ -21,7 +21,32 @@ function onLongPress(card, run) {
   return card;
 }
 
-export function renderHome(root, { workouts: all, storage, activeWorkoutId, initial, canAdd, pilates = false, streak = 0, onAccount, onAdd, onOpen, onStart, onManage }) {
+// Schede del coach già aperte: restano «Nuova» finché l'id non finisce qui.
+export const COACH_SEEN_KEY = 'buddygym:coach-seen:v1';
+
+export function readSeenCoachWorkouts(storage) {
+  try {
+    const parsed = JSON.parse(storage?.getItem?.(COACH_SEEN_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []);
+  } catch { return new Set(); }
+}
+
+export function markCoachWorkoutSeen(storage, id) {
+  if (typeof id !== 'string' || !id) return false;
+  const seen = readSeenCoachWorkouts(storage);
+  if (seen.has(id)) return false;
+  seen.add(id);
+  try { storage?.setItem?.(COACH_SEEN_KEY, JSON.stringify([...seen].slice(-200))); } catch { /* Il pallino resta per questa apertura. */ }
+  return true;
+}
+
+export function isNewCoachWorkout(workout, seenIds) {
+  if (workout?.source !== 'coach' || !workout.id) return false;
+  const seen = seenIds instanceof Set ? seenIds : new Set(seenIds ?? []);
+  return !seen.has(workout.id);
+}
+
+export function renderHome(root, { workouts: all, storage, activeWorkoutId, initial, canAdd, pilates = false, streak = 0, coachSeen = new Set(), onAccount, onAdd, onOpen, onStart, onManage }) {
   const workouts = all.filter((workout) => !workout.archived);
   const archived = all.filter((workout) => workout.archived);
   const sessionsById = new Map(workouts.map((workout) => [workout.id, workoutSessions(storage, workout)]));
@@ -35,7 +60,7 @@ export function renderHome(root, { workouts: all, storage, activeWorkoutId, init
     const minutes = averageMinutes(sessions) ?? (pilates && count ? Math.round(plannedSeconds(workout) / 60) : null);
     const lastEnd = lastEndById.get(workout.id);
     const next = workout.id === nextId;
-    return onLongPress(workoutCard({
+    const card = workoutCard({
       title: workout.title,
       overline: next ? 'Prossima' : dayLabel(index),
       meta: [
@@ -49,7 +74,15 @@ export function renderHome(root, { workouts: all, storage, activeWorkoutId, init
         : (workout.id === activeWorkoutId ? 'Riprendi allenamento' : 'Inizia allenamento'),
       onOpen: () => onOpen(workout),
       onStart: () => onStart(workout),
-    }), onManage ? () => onManage(workout) : null);
+    });
+    if (workout.source === 'coach') {
+      const badges = el('div', { className: 'bg-card__coach' },
+        el('span', { className: 'bg-mtag bg-mtag--gym', text: `dal coach · ${workout.coachAlias || 'Coach'}` }),
+        isNewCoachWorkout(workout, coachSeen) ? el('span', { className: 'bg-card__new', text: 'Nuova' }) : null);
+      card.insertBefore(badges, card.querySelector('.bg-card__title'));
+    }
+    // Il menu non si apre sulle schede del coach: sono in sola lettura.
+    return onLongPress(card, onManage && workout.source !== 'coach' ? () => onManage(workout) : null);
   });
   // Archiviate: in fondo, una riga per scheda; pressione lunga o tocco per il menu.
   const archivedList = archived.length ? [

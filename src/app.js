@@ -46,7 +46,8 @@ import { ANALYSES_KEY, analysesOnDay, coachShareText, loadAnalyses, loadCloudAna
 import { loadCoachLinks, sendMessage } from './coach-chat.js';
 import { canCompressVideo, compressVideo } from './video-compress.js';
 import { keepFrameFitted } from './video-frame.js';
-import { renderHome as renderHomeScreen } from './screens/home.js';
+import { markCoachWorkoutSeen, readSeenCoachWorkouts, renderHome as renderHomeScreen } from './screens/home.js';
+import { deleteReleased, loadMyAssignments, mergeAssignedWorkouts, subscribeMyAssignments } from './coach-assignments.js';
 import { renderLogin } from './screens/login.js';
 import { renderAliasPrompt, renderSignup, resetSignup } from './screens/signup.js';
 import { renderNewPassword } from './screens/new-password.js';
@@ -96,6 +97,11 @@ let uploadedIds = [];
 let uploadedExerciseKeys = [];
 let cloudReady = false;
 let hydrating = false;
+// Iscrizione alle schede assegnate dal coach e sincronizzazione senza sovrapposizioni.
+let assignmentUnsubscribe = null;
+let assignmentSyncInFlight = false;
+let assignmentSyncAgain = false;
+let assignmentSyncPromise = Promise.resolve();
 const syncMetaKey = (userId) => `buddygym:account-sync-state:${userId}`;
 const dirtyKey = (userId) => `buddygym:account-pending:${userId}`;
 migrateLegacyCurlLogs(storage);
@@ -445,6 +451,102 @@ async function mergeCloudAnalyses(userId) {
   }
 }
 
+// ── Schede assegnate dal coach ─────────────────────────────────────────
+// Dopo un download dal cloud i campi coach (alias, versione, link) non ci sono
+// più: questo merge li ricostruisce e aggiorna le schede locali.
+async function syncAssignedWorkoutsOnce() {
+  const userId = cloudUser?.id;
+  const client = cloudClient;
+  const target = storage;
+  if (!userId || !client || !target || demoPreview || hydrating) return;
+  try {
+    const assignments = await loadMyAssignments(client, userId);
+    if (cloudUser?.id !== userId || cloudClient !== client || storage !== target) return;
+    const coachIds = [...new Set(assignments.map((row) => row?.coach).filter(Boolean))];
+    let aliases = new Map();
+    if (coachIds.length) {
+      try { aliases = await social.loadNames(client, coachIds); }
+      catch (error) { console.error('BUDDYGYM coach aliases unavailable', error); }
+    }
+    if (cloudUser?.id !== userId || cloudClient !== client || storage !== target) return;
+
+    const current = loadWorkouts(target);
+    const merged = mergeAssignedWorkouts(current, assignments, aliases);
+    const changed = JSON.stringify(current) !== JSON.stringify(merged.workouts);
+    if ((changed || merged.releasedIds.length) && !saveWorkouts(target, merged.workouts)) {
+      console.error('BUDDYGYM assigned workouts not saved');
+      return;
+    }
+    workouts = merged.workouts;
+    activeWorkout = loadActiveWorkout(target, workouts);
+
+    // Le schede del coach devono arrivare in buddy_workouts con lo stesso id.
+    if (changed || merged.releasedIds.length) void syncCloud();
+
+    // Solo dopo aver salvato le schede in locale si cancellano le righe rilasciate.
+    for (const id of merged.releasedIds) {
+      try { await deleteReleased(client, id); }
+      catch (error) { console.error('BUDDYGYM released assignment not deleted', error); }
+    }
+    if (cloudUser?.id !== userId) return;
+    refreshAssignmentView();
+  } catch (error) {
+    console.error('BUDDYGYM assignment sync failed', error);
+  }
+}
+
+function syncAssignedWorkouts() {
+  if (!cloudUser || !cloudClient || demoPreview || hydrating) return Promise.resolve();
+  if (assignmentSyncInFlight) {
+    assignmentSyncAgain = true;
+    return assignmentSyncPromise;
+  }
+  assignmentSyncInFlight = true;
+  assignmentSyncPromise = (async () => {
+    try {
+      do {
+        assignmentSyncAgain = false;
+        await syncAssignedWorkoutsOnce();
+      } while (assignmentSyncAgain && cloudUser && cloudClient && !demoPreview && !hydrating);
+    } finally {
+      assignmentSyncInFlight = false;
+      assignmentSyncAgain = false;
+    }
+  })();
+  return assignmentSyncPromise;
+}
+
+function unsubscribeAssignments() {
+  const stop = assignmentUnsubscribe;
+  assignmentUnsubscribe = null;
+  if (stop) {
+    try { stop(); } catch (error) { console.error('BUDDYGYM assignment subscription failed to close', error); }
+  }
+}
+
+function subscribeAssignments(userId) {
+  unsubscribeAssignments();
+  if (!cloudClient || !userId) return;
+  try {
+    assignmentUnsubscribe = subscribeMyAssignments(cloudClient, userId, () => { void syncAssignedWorkouts(); });
+  } catch (error) {
+    console.error('BUDDYGYM assignment subscription failed', error);
+  }
+}
+
+function refreshAssignmentView() {
+  if (screens.home && !screens.home.hidden) {
+    renderHome();
+    return;
+  }
+  const match = /^#\/scheda\/([^/]+)/.exec(window.location.hash);
+  if (!match) return;
+  const id = decodeURIComponent(match[1]);
+  const workout = workouts.find((item) => item.id === id && !item.deleted);
+  if (workout) renderWorkout(workout);
+  else openRoute('#/schede');
+}
+
 async function loadAccountProfile(userId) {
   profileOwnerId = userId;
   try {
@@ -515,6 +617,7 @@ function syncCloud() {
 async function handleAuthSession(session) {
   const user = session?.user ?? null;
   if (user?.id === cloudUser?.id && (user || cloudUser === null)) return;
+  unsubscribeAssignments();
   clearTimeout(syncTimer);
   syncEnabled = false;
   cloudUser = user;
@@ -575,6 +678,8 @@ async function handleAuthSession(session) {
         }
         renderAccount();
         updateWorkoutTimer();
+        subscribeAssignments(user.id);
+        void syncAssignedWorkouts();
         return;
       }
       const result = await hydrateAccount(user.id, storage);
@@ -598,6 +703,8 @@ async function handleAuthSession(session) {
   renderAccount();
   updateWorkoutTimer();
   renderRoute();
+  if (cloudUser) subscribeAssignments(cloudUser.id);
+  void syncAssignedWorkouts();
 }
 
 async function initAccount() {
@@ -1534,6 +1641,7 @@ function renderHome() {
   renderHomeScreen(screens.home, {
     workouts: modeWorkouts(),
     storage,
+    coachSeen: readSeenCoachWorkouts(deviceStorage),
     onManage: (workout) => workoutMenu(workout),
     pilates: isPilates(),
     streak: isPilates() ? daysInRow(modeSessions()) : 0,
@@ -1638,7 +1746,7 @@ function setSocialUnread(value) {
   if (screen) renderChrome(screen);
 }
 setInterval(() => { if (cloudUser && !document.hidden) void refreshNotifications(); }, 120_000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && cloudUser) void refreshNotifications(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && cloudUser) { void refreshNotifications(); void syncAssignedWorkouts(); } });
 
 async function loadSocial() {
   const me = cloudUser.id;
@@ -1975,6 +2083,7 @@ function renderChrome(screen) {
 }
 
 function renderWorkout(workout) {
+  if (workout.source === 'coach') markCoachWorkoutSeen(deviceStorage, workout.id);
   const active = activeWorkout?.workoutId === workout.id;
   renderWorkoutScreen(screens.workout, document.querySelector('#dockSlot'), {
     workout, storage, active,

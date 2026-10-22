@@ -24,25 +24,27 @@ function exerciseRow({ exercise, index, meta, state, onOpen }) {
 export function renderWorkoutScreen(root, dock, { workout, storage, active, editable, pilatesProgress, onBack, onOpenExercise, onStart, onStop, onEdit, onAddExercise, onMenu, unit = 'kg' }) {
   const exercises = workout.exercises;
   const pilates = workout.mode === 'pilates';
+  const assignedBy = workout.source === 'coach' ? `Assegnata da ${workout.coachAlias || 'Coach'}` : null;
+  const withAssigned = (subtitle = null) => [assignedBy, subtitle].filter(Boolean).join(' · ') || undefined;
   let head;
   let rows;
   if (pilates && active) {
     const { done, current } = pilatesProgress;
-    head = pageHead({ title: workout.title, subtitle: `${done.size} di ${exercises.length} esercizi fatti · tocca un esercizio per aprirlo` });
+    head = pageHead({ title: workout.title, subtitle: withAssigned(`${done.size} di ${exercises.length} esercizi fatti · tocca un esercizio per aprirlo`) });
     head.classList.add('bg-pagehead--tight');
     rows = exercises.map((exercise, index) => {
       const state = done.has(index) ? 'done' : index === current ? 'current' : '';
       return exerciseRow({ exercise, index, meta: state === 'done' ? 'Fatto' : state === 'current' ? 'In corso' : exerciseMeta(exercise), state, onOpen: () => onOpenExercise(exercise) });
     });
   } else if (pilates) {
-    head = pageHead({ title: workout.title });
+    head = pageHead({ title: workout.title, subtitle: withAssigned() });
     head.classList.add('bg-pagehead--tight');
     rows = exercises.map((exercise, index) => exerciseRow({ exercise, index, meta: exerciseMeta(exercise), onOpen: () => onOpenExercise(exercise) }));
   } else if (active) {
     // In corso: fatto, in corso (serie iniziate) o da fare.
     const progress = exercises.map((exercise) => exerciseProgress(exercise, readSetLog(storage, workout.id, exercise.id)));
     const doneCount = progress.filter((item) => item.complete).length;
-    head = pageHead({ title: workout.title, subtitle: `${doneCount} di ${exercises.length} esercizi fatti · tocca un esercizio per aprirlo` });
+    head = pageHead({ title: workout.title, subtitle: withAssigned(`${doneCount} di ${exercises.length} esercizi fatti · tocca un esercizio per aprirlo`) });
     head.classList.add('bg-pagehead--tight');
     rows = exercises.map((exercise, index) => {
       const { done, total, complete } = progress[index];
@@ -52,7 +54,7 @@ export function renderWorkoutScreen(root, dock, { workout, storage, active, edit
       return exerciseRow({ exercise, index, meta, state: complete ? 'done' : done ? 'current' : '', onOpen: () => onOpenExercise(exercise) });
     });
   } else {
-    head = pageHead({ title: workout.title });
+    head = pageHead({ title: workout.title, subtitle: withAssigned() });
     head.classList.add('bg-pagehead--tight');
     rows = exercises.map((exercise, index) => exerciseRow({
       exercise, index, meta: lastTimeLabel(exercise, readExerciseHistory(storage, workout.id, exercise.id), unit), onOpen: () => onOpenExercise(exercise),

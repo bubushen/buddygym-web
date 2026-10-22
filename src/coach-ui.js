@@ -1,5 +1,9 @@
 import { assignmentSnapshot, clientAssignments, createCoachStore, coachVideoUrl, prescription } from './coach-data.js';
 import { loadCoachLinks } from './coach-chat.js';
+import {
+  assignmentWorkout, assignToClient, loadClientProgress, loadCoachAssignments,
+  progressSummary, removeAssignment, updateAssignment,
+} from './coach-assignments.js';
 import { renderChatList } from './screens/coach-chat.js';
 import { exerciseSummary, makeId } from './workouts.js';
 import { CURL_EXERCISE } from './exercise-catalog.js';
@@ -11,6 +15,24 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const escape = (value = '') => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const action = (label, id, value = '', extra = '') => `<button type="button" class="secondary-button" data-action="${id}" data-id="${escape(value)}" ${extra}>${label}</button>`;
+
+// «21 ott»: giorno e mese in italiano, senza anno.
+function shortDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' }).format(date);
+}
+
+// «100 kg × 5» da una serie { load, reps } oppure già formattata dal calcolo.
+function setLabel(set) {
+  if (!set) return '—';
+  if (typeof set === 'string') return set;
+  const load = set.load ?? set.weight ?? set.kg;
+  const parts = [];
+  if (load !== undefined && load !== null) parts.push(`${load} kg`);
+  if (set.reps !== undefined && set.reps !== null) parts.push(`× ${set.reps}`);
+  return parts.length ? parts.join(' ') : '—';
+}
 
 const COACH_TABS = [['templates', 'Template'], ['exercises', 'Esercizi'], ['clients', 'Clienti'], ['chat', 'Chat']];
 
@@ -26,6 +48,10 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
   let activeId;
   let chatUnread = false;
   let chatList = null;
+  // Clienti reali: legami accettati, schede assegnate e progressi (src/coach-assignments.js).
+  let real = { links: [], assignments: [], summaries: {}, loading: false, error: false };
+  let realLoaded = false;
+  let realBusy = false;
 
   function message(text) { const node = root.querySelector('#coachMessage'); if (node) node.textContent = text; }
   function shell(title, description, body, back = null) {
@@ -36,10 +62,11 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
       <p id="coachMessage" class="bg-note coach-message" role="status"></p>${body}`;
   }
   function go(next, id) {
-    if (busy) return;
+    if (busy || realBusy) return;
     root.querySelectorAll('video').forEach((video) => video.pause());
     if (view !== next) teardownChat();
     view = next; activeId = id;
+    if (view === 'clients' || view === 'real-client' || view === 'assign') ensureReal();
     render();
     root.closest('.app-scroll').scrollTop = 0;
   }
@@ -76,6 +103,7 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
     if (view === 'single-assign') return singleExerciseForm(activeId);
     if (view === 'assign') return assignForm(activeId);
     if (view === 'client') return clientPage(activeId);
+    if (view === 'real-client') return realClientPage(activeId);
     if (view === 'assignment') return assignmentForm(activeId);
     if (view === 'video') return videoPage(activeId);
     if (view === 'exercises') {
@@ -83,7 +111,9 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
         `<button type="button" class="primary-button coach-add" data-action="new-exercise">Crea esercizio</button>` + cards(data.exercises, (item) =>
           `<article class="coach-card"><h2>${escape(item.title)}</h2><p>${item.reference ? 'Video di riferimento disponibile' : 'Nessun video di riferimento'}</p><div class="coach-card-actions">${action('Modifica', 'edit-exercise', item.id)}${action('Assegna esercizio', 'single-assign', item.id)}${item.reference ? action('Guarda video', 'video', item.id) : ''}${action('Elimina', 'delete-exercise', item.id)}</div></article>`, 'Crea il primo esercizio della tua libreria.'));
     } else if (view === 'clients') {
-      shell('I tuoi clienti', 'Clienti fittizi per provare le assegnazioni. Il collegamento con persone reali arriverà in seguito.',
+      shell('I tuoi clienti', 'Gestisci i clienti reali e i clienti di prova.',
+        realClientsSection() +
+        '<div class="section-heading section-heading-spaced"><h2>Clienti di prova</h2></div>' +
         cards(data.clients, (item) => `<button type="button" class="workout-card" data-action="client" data-id="${escape(item.id)}"><span class="coach-demo-tag">CLIENTE DI PROVA</span><strong>${escape(item.name)}</strong><p>${data.assignments.filter((plan) => plan.clientId === item.id).length} schede assegnate</p><span class="card-arrow">Apri →</span></button>`, 'Nessun cliente di prova disponibile.'));
     } else {
       view = 'templates';
@@ -244,20 +274,43 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
   function assignForm(templateId) {
     const template = data.templates.find((item) => item.id === templateId);
     if (!template) return go('templates');
+    const realChoices = real.loading
+      ? '<p class="bg-note coach-real-note" role="status">Carico i tuoi clienti…</p>'
+      : real.error
+        ? '<p class="bg-note coach-real-note" role="status">Non riesco a caricare i tuoi clienti. Riprova.</p>'
+        : real.links.length
+          ? real.links.map((link) => {
+            const exists = real.assignments.some((row) => row.link_id === link.id && row.template_id === templateId);
+            return `<label class="mode-choice"><input type="checkbox" name="realclient" value="${escape(link.id)}" ${exists ? 'disabled' : ''} /><span>${escape(link.alias)}${exists ? ' · già assegnata' : ''}</span></label>`;
+          }).join('')
+          : '<p class="empty-list">Nessun cliente reale: invitali dalla scheda Chat.</p>';
     shell('Assegna la scheda', template.title,
-      `<form class="editor-form" id="coachAssignForm">${data.clients.map((item) => {
+      `<form class="editor-form" id="coachAssignForm"><div class="section-heading"><h2>Clienti di prova</h2></div>${data.clients.map((item) => {
         const exists = data.assignments.some((plan) => plan.clientId === item.id && plan.templateId === templateId);
         return `<label class="mode-choice"><input type="checkbox" name="client" value="${escape(item.id)}" ${exists ? 'disabled' : ''} /><span>${escape(item.name)}${exists ? ' · già assegnata' : ''}</span></label>`;
-      }).join('')}<p class="form-help">Ogni cliente riceve una copia indipendente. Puoi personalizzarla dalla sua pagina.</p><button type="submit" class="primary-button">Assegna ai clienti selezionati →</button></form>`, 'templates');
+      }).join('')}<div class="section-heading section-heading-spaced"><h2>Clienti reali</h2></div>${realChoices}<p class="form-help">Ogni cliente riceve una copia indipendente. Puoi personalizzarla dalla sua pagina.</p><button type="submit" class="primary-button">Assegna ai clienti selezionati →</button></form>`, 'templates');
     root.querySelector('form').onsubmit = (event) => {
       event.preventDefault();
-      try {
-        const ids = [...root.querySelectorAll('[name="client"]:checked')].map((node) => node.value);
-        if (!ids.length) throw new Error('Seleziona almeno un cliente di prova.');
+      const fakeIds = [...root.querySelectorAll('[name="client"]:checked')].map((node) => node.value);
+      const realIds = [...root.querySelectorAll('[name="realclient"]:checked')].map((node) => node.value);
+      if (!fakeIds.length && !realIds.length) { message('Seleziona almeno un cliente.'); return; }
+      const assignReal = async () => {
+        if (!realIds.length) { go('clients'); message(`Scheda assegnata a ${fakeIds.length} clienti di prova.`); return; }
+        await runReal(async () => {
+          for (const linkId of realIds) {
+            const link = real.links.find((item) => item.id === linkId);
+            if (!link) continue;
+            await assignToClient(client, owner, link, assignmentWorkout(data, templateId), templateId);
+          }
+        }, `Scheda assegnata a ${realIds.length} ${realIds.length === 1 ? 'cliente' : 'clienti'}.`, () => go('clients'));
+      };
+      if (fakeIds.length) {
         const next = structuredClone(data);
-        for (const id of ids) next.assignments.push(assignmentSnapshot(data, templateId, id));
-        void commit(next, () => { go('clients'); message(`Scheda assegnata a ${ids.length} clienti di prova.`); });
-      } catch (error) { message(error.message); }
+        for (const id of fakeIds) next.assignments.push(assignmentSnapshot(data, templateId, id));
+        void commit(next, () => { void assignReal(); });
+      } else {
+        void assignReal();
+      }
     };
   }
   function singleExerciseForm(exerciseId) {
@@ -292,6 +345,120 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
       `${plans.length ? action('Prova come cliente →', 'preview', id) : ''}<div class="section-heading section-heading-spaced"><h2>Schede assegnate</h2></div>` + cards(plans, (item) =>
         `<article class="coach-card"><h2>${escape(item.title)}</h2><p>${item.exercises.length} esercizi · versione ${item.version}</p><ul>${item.exercises.map((exercise) => `<li>${escape(exercise.title)} · ${escape(exerciseSummary(exercise))}</li>`).join('')}</ul><div class="coach-card-actions">${action('Personalizza copia', 'edit-assignment', item.id)}${data.templates.some((template) => template.id === item.templateId) ? action('Aggiorna dal template', 'refresh-assignment', item.id) : ''}${action('Rimuovi scheda', 'remove-assignment', item.id)}</div></article>`, 'Assegna una scheda dalla sezione Template.'), 'clients');
   }
+
+  // ── Clienti reali (legami accettati) ────────────────────────────────────
+  // Ultima seduta registrata per un cliente, da tutti i suoi riepiloghi.
+  function clientLastAt(link) {
+    const times = (real.summaries[link.otherId] ?? [])
+      .map((row) => row.lastAt).filter(Boolean)
+      .map((value) => new Date(value).getTime()).filter((value) => !Number.isNaN(value));
+    return times.length ? Math.max(...times) : null;
+  }
+  function realClientsSection() {
+    const heading = `<div class="section-heading section-heading-spaced"><h2>I tuoi clienti</h2>${real.links.length ? `<span>${real.links.length}</span>` : ''}</div>`;
+    if (real.loading) return `${heading}<p class="bg-note coach-real-note" role="status">Carico i tuoi clienti…</p>`;
+    if (real.error) return `${heading}<p class="bg-note coach-real-note" role="status">Non riesco a caricare i tuoi clienti. Riprova.</p><div class="coach-real-empty"><button type="button" class="secondary-button" data-action="real-retry">Riprova</button></div>`;
+    if (!real.links.length) {
+      return `${heading}<div class="empty-list coach-real-empty"><p>Invita i tuoi clienti dalla scheda Chat.</p><button type="button" class="secondary-button" data-action="tab" data-id="chat">Vai a Chat</button></div>`;
+    }
+    return heading + `<div class="workout-list">${real.links.map((link) => {
+      const count = real.assignments.filter((row) => row.client === link.otherId).length;
+      const last = clientLastAt(link);
+      return `<button type="button" class="workout-card" data-action="real-client" data-id="${escape(link.id)}"><span class="coach-real-tag">CLIENTE</span><strong>${escape(link.alias)}</strong><p>${count} ${count === 1 ? 'scheda assegnata' : 'schede assegnate'}</p><p>${last ? `Ultimo allenamento: ${shortDate(last)}` : 'Nessun allenamento ancora'}</p><span class="card-arrow">Apri →</span></button>`;
+    }).join('')}</div>`;
+  }
+  // Pagina di un cliente reale: chat, schede assegnate, nuova assegnazione e progressi.
+  function realClientPage(linkId) {
+    const link = real.links.find((item) => item.id === linkId);
+    if (!link) return go('clients');
+    const mine = real.assignments.filter((row) => row.client === link.otherId);
+    const summary = real.summaries[link.otherId] ?? [];
+
+    const assignmentCards = mine.length ? `<div class="workout-list">${mine.map((row) => {
+      const title = row.workout?.title ?? 'Scheda';
+      const exercises = row.workout?.exercises?.length ?? 0;
+      let canRefresh = false;
+      try { assignmentWorkout(data, row.template_id); canRefresh = true; } catch { canRefresh = false; }
+      return `<article class="coach-card"><h2>${escape(title)}</h2><p>${exercises} ${exercises === 1 ? 'esercizio' : 'esercizi'} · aggiornata il ${shortDate(row.updated_at)}</p><div class="coach-card-actions">${canRefresh ? action('Aggiorna dal template', 'real-refresh', row.id) : ''}${action('Rimuovi', 'real-remove', row.id)}</div></article>`;
+    }).join('')}</div>` : '<p class="empty-list">Nessuna scheda assegnata. Scegli un template qui sotto.</p>';
+
+    const templates = data.templates.length ? `<div class="coach-rows">${data.templates.map((template) => `<button type="button" class="coach-real-pick" data-action="real-assign" data-id="${escape(template.id)}" data-link="${escape(link.id)}"><strong>${escape(template.title)}</strong><small>${template.exercises.length} ${template.exercises.length === 1 ? 'esercizio' : 'esercizi'}</small></button>`).join('')}</div>` : '<p class="empty-list">Crea prima un template nella scheda Template.</p>';
+
+    const progress = summary.length ? summary.map((row) => `<article class="coach-card coach-real-progress"><h2>${escape(row.title)}</h2><p>${row.count} ${row.count === 1 ? 'seduta' : 'sedute'}</p>${(row.lastSessions ?? []).length ? `<ul class="coach-real-sessions">${row.lastSessions.map((session) => `<li><span>${shortDate(session.at)}</span><small>${escape(session.durationMin)} min</small></li>`).join('')}</ul>` : ''}${(row.exercises ?? []).length ? `<ul class="coach-real-sets">${row.exercises.map((exercise) => `<li><span>${escape(exercise.title)}</span><small>Miglior serie: ${escape(setLabel(exercise.best))}</small><small>Ultima serie: ${escape(setLabel(exercise.lastTop))}</small></li>`).join('')}</ul>` : ''}</article>`).join('') : '<p class="empty-list">Nessun allenamento registrato per ora.</p>';
+
+    const progressBlock = real.loading
+      ? '<p class="bg-note coach-real-note" role="status">Carico i progressi…</p>'
+      : real.error
+        ? '<p class="bg-note coach-real-note" role="status">Non riesco a caricare i dati del cliente. Riprova.</p>'
+        : progress;
+
+    shell(link.alias, 'Cliente reale · gestisci schede e progressi.',
+      `<div class="coach-real-head"><button type="button" class="secondary-button" data-action="real-open-chat" data-id="${escape(link.id)}">Apri chat</button></div>
+      <div class="section-heading section-heading-spaced"><h2>Schede assegnate</h2></div>${assignmentCards}
+      <div class="section-heading section-heading-spaced"><h2>Assegna una scheda</h2></div>${templates}
+      <div class="section-heading section-heading-spaced"><h2>Progressi</h2></div>${progressBlock}
+      <div class="bg-exspacer bg-exspacer--form" aria-hidden="true"></div>`, 'clients');
+  }
+
+  // Carica legami, schede e progressi dei clienti reali (una sola volta, poi su richiesta).
+  function ensureReal() {
+    if (realLoaded || real.loading || real.error) return;
+    real.loading = true;
+    void fetchReal(generation).then(() => {
+      if (view === 'clients' || view === 'real-client' || view === 'assign') render();
+    });
+  }
+  async function fetchReal(current) {
+    try {
+      const links = await loadCoachLinks(client, owner);
+      const clients = (links ?? []).filter((link) => link.status === 'accepted' && link.role === 'coach');
+      const assignments = (await loadCoachAssignments(client, owner)) ?? [];
+      const summaries = {};
+      await Promise.all(clients.map(async (link) => {
+        const rows = assignments.filter((row) => row.client === link.otherId);
+        if (!rows.length) return;
+        try {
+          const progress = await loadClientProgress(client, link.otherId, rows.map((row) => row.id));
+          summaries[link.otherId] = progressSummary(progress.sessions, progress.history, rows);
+        } catch { summaries[link.otherId] = []; }
+      }));
+      if (current !== generation) return false;
+      real = { links: clients, assignments, summaries, loading: false, error: false };
+      realLoaded = true;
+      return true;
+    } catch {
+      if (current !== generation) return false;
+      real = { ...real, loading: false, error: true };
+      return false;
+    }
+  }
+  // Operazione sui clienti reali: disabilita i comandi, salva, ricarica e mostra l'esito.
+  async function runReal(run, done, navigate = null) {
+    if (realBusy || busy) return;
+    realBusy = true;
+    const controls = [...root.querySelectorAll('button, input, select, textarea')].map((node) => [node, node.disabled]);
+    controls.forEach(([node]) => { node.disabled = true; });
+    const current = generation;
+    let failed = false;
+    try {
+      message('Salvataggio…');
+      await run();
+    } catch (error) {
+      failed = true;
+      if (current === generation) message(error?.message || 'Operazione non riuscita. Riprova.');
+    } finally {
+      if (current === generation) {
+        realBusy = false;
+        controls.forEach(([node, disabled]) => { if (node.isConnected) node.disabled = disabled; });
+      }
+    }
+    if (failed || current !== generation) return;
+    await fetchReal(current);
+    if (current !== generation) return;
+    if (navigate) navigate(); else render();
+    message(done);
+  }
+
   function assignmentForm(id) {
     const plan = data.assignments.find((item) => item.id === id);
     if (!plan) return go('clients');
@@ -328,7 +495,7 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
 
   root.addEventListener('click', (event) => {
     const target = event.target.closest('[data-action]');
-    if (!target || busy || !data) return;
+    if (!target || busy || realBusy || !data) return;
     const id = target.dataset.id;
     switch (target.dataset.action) {
       case 'tab': case 'back': go(id); break;
@@ -339,6 +506,31 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
       case 'single-assign': go('single-assign', id); break;
       case 'assign': go('assign', id); break;
       case 'client': go('client', id); break;
+      case 'real-client': go('real-client', id); break;
+      case 'real-open-chat': onOpenChat(id); break;
+      case 'real-retry': real.error = false; ensureReal(); render(); break;
+      case 'real-assign': {
+        const link = real.links.find((item) => item.id === target.dataset.link);
+        if (!link) break;
+        let workout;
+        try { workout = assignmentWorkout(data, id); } catch (error) { message(error.message); break; }
+        void runReal(() => assignToClient(client, owner, link, workout, id), `Scheda assegnata a ${link.alias}.`);
+        break;
+      }
+      case 'real-refresh': {
+        const row = real.assignments.find((item) => item.id === id);
+        if (!row) break;
+        let workout;
+        try { workout = assignmentWorkout(data, row.template_id); } catch (error) { message(error.message); break; }
+        if (!confirm('Aggiornare questa scheda dal template attuale? Le personalizzazioni andranno perse.')) break;
+        void runReal(() => updateAssignment(client, id, workout), 'Scheda aggiornata.');
+        break;
+      }
+      case 'real-remove': {
+        if (!confirm('Rimuovere questa scheda dal cliente?')) break;
+        void runReal(() => removeAssignment(client, id), 'Scheda rimossa.');
+        break;
+      }
       case 'edit-assignment': go('assignment', id); break;
       case 'video': go('video', id); break;
       case 'preview': onPreview(data.clients.find((item) => item.id === id), clientAssignments(data, id)); break;
@@ -385,12 +577,17 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
       const current = generation;
       owner = user.id; client = supabase; store = createCoachStore(client, owner); data = null;
       chatUnread = false;
+      real = { links: [], assignments: [], summaries: {}, loading: false, error: false };
+      realLoaded = false;
+      realBusy = false;
       root.innerHTML = '<p class="account-message">Caricamento della tua area coach…</p>';
       loading = (async () => {
         try {
           const loaded = await store.load();
           if (current !== generation) return;
-          data = loaded; render();
+          data = loaded;
+          if (view === 'clients' || view === 'real-client' || view === 'assign') ensureReal();
+          render();
           void refreshChatBadge(current);
         } catch {
           if (current !== generation) return;
@@ -411,7 +608,7 @@ export function createCoachUI(root, { onPreview, prepareReference, onOpenChat })
     },
     // Fuori dall'area coach: nessun canale realtime deve restare aperto.
     leave() { teardownChat(); },
-    reset() { generation += 1; teardownChat(); chatUnread = false; owner = null; data = null; loading = null; busy = false; view = 'templates'; root.replaceChildren(); },
+    reset() { generation += 1; teardownChat(); chatUnread = false; owner = null; data = null; loading = null; busy = false; real = { links: [], assignments: [], summaries: {}, loading: false, error: false }; realLoaded = false; realBusy = false; view = 'templates'; root.replaceChildren(); },
     isBusy() { return busy; },
   };
 }
