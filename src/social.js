@@ -120,7 +120,7 @@ export async function acceptInvite(client, token) {
 }
 
 export async function loadNotifications(client, limit = 30) {
-  const rows = ok(await client.from('buddy_notifications').select('id,kind,actor,post_id,comment_id,created_at,read_at').order('created_at', { ascending: false }).limit(limit));
+  const rows = ok(await client.from('buddy_notifications').select('id,kind,actor,post_id,comment_id,created_at,read_at').not('kind', 'like', 'coach_%').order('created_at', { ascending: false }).limit(limit));
   const names = await loadNames(client, rows.map((row) => row.actor));
   return rows.map((row) => ({ ...row, actorName: names.get(row.actor) ?? 'Qualcuno' }));
 }
@@ -174,8 +174,10 @@ export function suggestedTitle(session) {
 
 // Notifiche raggruppate: «Marco e altri 11 ti hanno dato Forza».
 export function groupNotifications(items) {
+  // La chat coach ha la sua scheda: le notifiche coach_* non entrano nel Social.
+  const socialItems = items.filter((item) => !String(item.kind ?? '').startsWith('coach_'));
   const groups = [];
-  for (const item of items) {
+  for (const item of socialItems) {
     const key = item.kind === 'strength' ? `strength:${item.post_id}` : item.id;
     const group = groups.find((entry) => entry.key === key);
     if (group) { group.items.push(item); continue; }

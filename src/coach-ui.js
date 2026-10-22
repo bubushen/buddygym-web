@@ -1,4 +1,6 @@
 import { assignmentSnapshot, clientAssignments, createCoachStore, coachVideoUrl, prescription } from './coach-data.js';
+import { loadCoachLinks } from './coach-chat.js';
+import { renderChatList } from './screens/coach-chat.js';
 import { exerciseSummary, makeId } from './workouts.js';
 import { CURL_EXERCISE } from './exercise-catalog.js';
 import { compressVideo } from './video-compress.js';
@@ -10,7 +12,9 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const escape = (value = '') => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const action = (label, id, value = '', extra = '') => `<button type="button" class="secondary-button" data-action="${id}" data-id="${escape(value)}" ${extra}>${label}</button>`;
 
-export function createCoachUI(root, { onPreview, prepareReference }) {
+const COACH_TABS = [['templates', 'Template'], ['exercises', 'Esercizi'], ['clients', 'Clienti'], ['chat', 'Chat']];
+
+export function createCoachUI(root, { onPreview, prepareReference, onOpenChat }) {
   let owner;
   let client;
   let store;
@@ -20,18 +24,21 @@ export function createCoachUI(root, { onPreview, prepareReference }) {
   let view = 'templates';
   let generation = 0;
   let activeId;
+  let chatUnread = false;
+  let chatList = null;
 
   function message(text) { const node = root.querySelector('#coachMessage'); if (node) node.textContent = text; }
   function shell(title, description, body, back = null) {
     const backIcon = '<svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
     root.innerHTML = `${back ? `<header class="bg-topbar"><button type="button" class="bg-iconbtn" data-action="back" data-id="${escape(back)}" aria-label="Indietro">${backIcon}</button><span class="bg-topbar__title">Coaching</span><span></span></header>` : ''}
       <div class="bg-exhead"><p class="bg-exhead__over">Spazio coach</p><h1>${escape(title)}</h1><p class="bg-exhead__lead">${escape(description)}</p></div>
-      <nav class="bg-segment" aria-label="Area coach">${['templates', 'exercises', 'clients'].map((tab, index) => `<button type="button" data-action="tab" data-id="${tab}" ${view === tab ? 'aria-current="page"' : ''}>${['Template', 'Esercizi', 'Clienti'][index]}</button>`).join('')}</nav>
+      <nav class="bg-segment" aria-label="Area coach">${COACH_TABS.map(([tab, label]) => `<button type="button" data-action="tab" data-id="${tab}" ${view === tab ? 'aria-current="page"' : ''}>${label}${tab === 'chat' ? `<span class="coach-chat__tabdot" ${chatUnread ? '' : 'hidden'} aria-hidden="true"></span>` : ''}</button>`).join('')}</nav>
       <p id="coachMessage" class="bg-note coach-message" role="status"></p>${body}`;
   }
   function go(next, id) {
     if (busy) return;
     root.querySelectorAll('video').forEach((video) => video.pause());
+    if (view !== next) teardownChat();
     view = next; activeId = id;
     render();
     root.closest('.app-scroll').scrollTop = 0;
@@ -63,6 +70,7 @@ export function createCoachUI(root, { onPreview, prepareReference }) {
   }
   function render() {
     if (!data) return;
+    if (view === 'chat') return chatPage();
     if (view === 'template') return templateForm(data.templates.find((item) => item.id === activeId));
     if (view === 'exercise') return exerciseForm(data.exercises.find((item) => item.id === activeId));
     if (view === 'single-assign') return singleExerciseForm(activeId);
@@ -83,6 +91,35 @@ export function createCoachUI(root, { onPreview, prepareReference }) {
         `<button type="button" class="primary-button coach-add" data-action="new-template">Crea template</button>` + cards(data.templates, (item) =>
           `<article class="coach-card"><span class="coach-demo-tag">TEMPLATE</span><h2>${escape(item.title)}</h2><p>${item.exercises.length} esercizi · le modifiche non cambiano le copie già assegnate.</p><div class="coach-card-actions">${action('Modifica', 'edit-template', item.id)}${action('Assegna →', 'assign', item.id)}${action('Elimina', 'delete-template', item.id)}</div></article>`, 'Crea il tuo primo template.'));
     }
+  }
+
+  // Scheda Chat: la vista è disegnata con el() dal renderer dedicato.
+  function teardownChat() {
+    chatList?.destroy?.();
+    chatList = null;
+  }
+  function syncChatDot() {
+    const dot = root.querySelector('.coach-chat__tabdot');
+    if (dot) dot.hidden = !chatUnread;
+  }
+  function chatPage() {
+    teardownChat();
+    shell('Chat', 'Parla con il tuo coach o con i tuoi clienti: solo voi due potete leggere i messaggi.',
+      '<div id="coachChatHost" class="coach-chat"></div>');
+    chatList = renderChatList(root.querySelector('#coachChatHost'), {
+      client,
+      me: owner,
+      onOpen: (linkId) => onOpenChat(linkId),
+      onUnread: (value) => { chatUnread = value; syncChatDot(); },
+    });
+  }
+  async function refreshChatBadge(current) {
+    try {
+      const links = await loadCoachLinks(client, owner);
+      if (current !== generation) return;
+      chatUnread = links.some((link) => (link.status === 'pending' && link.role === 'client') || link.unread > 0);
+      syncChatDot();
+    } catch { /* Il pallino si aggiorna quando si apre Chat. */ }
   }
 
   function prescriptionFields(item, prefix) {
@@ -337,17 +374,24 @@ export function createCoachUI(root, { onPreview, prepareReference }) {
 
   return {
     async enter(supabase, user) {
-      if (owner === user.id && data) return;
+      if (owner === user.id && data) {
+        if (view === 'chat') chatPage();
+        else void refreshChatBadge(generation);
+        return;
+      }
       if (owner === user.id && loading) return loading;
       generation += 1;
+      teardownChat();
       const current = generation;
       owner = user.id; client = supabase; store = createCoachStore(client, owner); data = null;
+      chatUnread = false;
       root.innerHTML = '<p class="account-message">Caricamento della tua area coach…</p>';
       loading = (async () => {
         try {
           const loaded = await store.load();
           if (current !== generation) return;
           data = loaded; render();
+          void refreshChatBadge(current);
         } catch {
           if (current !== generation) return;
           owner = null;
@@ -356,7 +400,18 @@ export function createCoachUI(root, { onPreview, prepareReference }) {
       })();
       return loading;
     },
-    reset() { generation += 1; owner = null; data = null; loading = null; busy = false; view = 'templates'; root.replaceChildren(); },
+    // Dalla chat «Indietro» torna all'area coach con la scheda Chat aperta.
+    showChat() {
+      view = 'chat';
+      if (data) {
+        render();
+        const scroller = root.closest('.app-scroll');
+        if (scroller) scroller.scrollTop = 0;
+      }
+    },
+    // Fuori dall'area coach: nessun canale realtime deve restare aperto.
+    leave() { teardownChat(); },
+    reset() { generation += 1; teardownChat(); chatUnread = false; owner = null; data = null; loading = null; busy = false; view = 'templates'; root.replaceChildren(); },
     isBusy() { return busy; },
   };
 }

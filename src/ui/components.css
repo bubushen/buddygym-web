@@ -391,7 +391,7 @@ body { background: var(--surface); color: var(--ink); font-family: var(--font-sa
 .bg-delta--flat { color: var(--ink-muted); }
 
 /* Area coach: stessa logica di prima, classi storiche ridisegnate con i token. */
-.bg-segment { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-1); margin: 0 var(--space-4) var(--space-3); padding: var(--space-1); border-radius: var(--radius-pill); background: var(--surface-raised); border: var(--border-thin) solid var(--line); }
+.bg-segment { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1); margin: 0 var(--space-4) var(--space-3); padding: var(--space-1); border-radius: var(--radius-pill); background: var(--surface-raised); border: var(--border-thin) solid var(--line); }
 .bg-segment button { height: var(--segment-height); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--ink-muted); font: var(--type-segment); cursor: pointer; }
 .bg-segment button[aria-current="page"] { background: var(--accent-soft); color: var(--on-accent-soft); }
 .bg-segment button:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
@@ -882,3 +882,39 @@ button.bg-srow:disabled { cursor: default; }
 .bg-sugg__btns { display: grid; grid-template-columns: 1fr 1.4fr; gap: var(--space-2); }
 .bg-sugg__btns .bg-btn { height: var(--sugg-btn); font: var(--type-sugg-btn); }
 .bg-modeseg--friend { margin-bottom: var(--space-3); }
+
+/* ——— Chat coach ↔ cliente ——— */
+.coach-chat__tabdot { display: inline-block; width: var(--tab-dot); height: var(--tab-dot); margin-left: var(--space-1); border-radius: 50%; background: var(--primary); vertical-align: middle; }
+.coach-chat__tabdot[hidden] { display: none; }
+.coach-chat { display: grid; gap: var(--space-3); padding-bottom: var(--space-5); }
+.coach-chat__entry { align-items: center; }
+.coach-chat__entry--request { flex-wrap: wrap; cursor: default; }
+.coach-chat__entry--request .coach-chat__actions { flex: 1 1 100%; justify-content: flex-end; }
+.coach-chat__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coach-chat__side { flex: none; display: grid; justify-items: end; gap: var(--space-1); }
+.coach-chat__time { font: var(--type-caption); color: var(--ink-muted); }
+.coach-chat__badge { min-width: var(--space-5); height: var(--space-5); padding: 0 var(--space-1); border-radius: var(--radius-pill); background: var(--primary); color: var(--on-primary); font: var(--type-caption); font-weight: 700; display: grid; place-items: center; }
+.coach-chat__actions { display: inline-flex; gap: var(--space-2); }
+.coach-chat__invite { padding: 0 var(--space-4); }
+.coach-chat__invite .bg-formstatus { margin: 0; }
+
+/* Conversazione: fumetti miei a destra, suoi a sinistra. */
+.coach-chat__thread { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4) var(--space-6); }
+.coach-chat__day { justify-self: center; margin: var(--space-2) 0; padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--ink-muted); font: var(--type-caption); }
+.coach-chat__message { display: grid; gap: var(--space-1); justify-items: start; max-width: 82%; }
+.coach-chat__message--mine { justify-self: end; justify-items: end; }
+.coach-chat__bubble { padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); border-bottom-left-radius: var(--radius-sm); background: var(--surface-raised); border: var(--border-thin) solid var(--line); color: var(--ink); }
+.coach-chat__message--mine .coach-chat__bubble { border-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-sm); background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.coach-chat__text { margin: 0; font: var(--type-body); overflow-wrap: anywhere; white-space: pre-wrap; }
+.coach-chat__meta { display: inline-flex; gap: var(--space-1); font: var(--type-caption); color: var(--ink-muted); }
+.coach-chat__composer { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4) var(--composer-bottom); background: var(--surface); border-top: var(--border-thin) solid var(--line); }
+.coach-chat__error { margin: 0; font: var(--type-caption); color: var(--danger); }
+.coach-chat__error:empty { display: none; }
+.coach-chat__field { display: flex; align-items: flex-end; gap: var(--space-2); }
+.coach-chat__input { flex: 1; min-width: 0; box-sizing: border-box; resize: none; overflow-y: auto; padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: var(--border-strong) solid var(--line); background: var(--surface-sunken); color: var(--ink); font: var(--type-textarea); }
+.coach-chat__input::placeholder { color: var(--ink-muted); }
+.coach-chat__input:focus { outline: 0; border-color: var(--focus-ring); }
+.coach-chat__send { flex: none; width: var(--control); height: var(--control); border-radius: 50%; border: 0; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; cursor: pointer; }
+.coach-chat__send:disabled { opacity: var(--exnav-small-opacity); cursor: default; }
+.coach-chat__send:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-width); }
+

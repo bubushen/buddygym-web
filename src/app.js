@@ -38,6 +38,7 @@ import { formatDuration, workoutSummary } from './workout-summary.js';
 import { displayNumber, formatWeight, fromInput, roundIncrement, toDisplay, unitLabel } from './units.js';
 import { SESSIONS_KEY, backfillSessions, calendarMonth, daySessions, defaultDay, loadSessions, sessionFromSummary, sessionMode, upsertSession } from './sessions.js';
 import { createCoachUI } from './coach-ui.js';
+import { renderCoachChatThread } from './screens/coach-chat.js';
 import { canCompressVideo, compressVideo } from './video-compress.js';
 import { keepFrameFitted } from './video-frame.js';
 import { renderHome as renderHomeScreen } from './screens/home.js';
@@ -205,6 +206,7 @@ const screens = {
   welcome: document.querySelector('#welcomeScreen'),
   access: document.querySelector('#accessScreen'),
   coach: document.querySelector('#coachScreen'),
+  coachChat: document.querySelector('#coachChatScreen'),
   bench: document.querySelector('#benchScreen'),
   home: document.querySelector('#homeScreen'),
   account: document.querySelector('#accountScreen'),
@@ -230,7 +232,12 @@ const screens = {
   settings: document.querySelector('#settingsScreen'),
   deleteAccount: document.querySelector('#deleteAccountScreen'),
 };
-const coachUI = createCoachUI(screens.coach, { onPreview: showDemoClient, prepareReference: prepareCoachReference });
+const coachUI = createCoachUI(screens.coach, {
+  onPreview: showDemoClient,
+  prepareReference: prepareCoachReference,
+  onOpenChat: (linkId) => openRoute(`#/coaching/chat/${encodeURIComponent(linkId)}`),
+});
+let coachChatView = null;
 
 function readAccessMode(userId) {
   try {
@@ -1911,11 +1918,11 @@ function renderCoachingLocked() {
       uiButton({ label: 'Accedi', onClick: () => openRoute('#/account') })));
 }
 
-const TAB_SCREENS = { home: 'schede', history: 'storico', nutrition: 'nutrizione', coachingLocked: 'coaching', coach: 'coaching', social: 'social', friends: 'social', leaderboard: 'social' };
+const TAB_SCREENS = { home: 'schede', history: 'storico', nutrition: 'nutrizione', coachingLocked: 'coaching', coach: 'coaching', coachChat: 'coaching', social: 'social', friends: 'social', leaderboard: 'social' };
 // Pallino sulla voce Social: nuovi commenti o «Forza» non ancora visti.
 let socialUnread = false;
 // Schermate già passate al nuovo design: senza la vecchia intestazione.
-const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'forgot', 'settings', 'deleteAccount', 'summary', 'coach', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
+const NEW_DESIGN_SCREENS = new Set(['welcome', 'home', 'nutrition', 'coachingLocked', 'login', 'signup', 'newPassword', 'alias', 'account', 'workout', 'exercise', 'workoutForm', 'exerciseForm', 'pilatesForm', 'forgot', 'settings', 'deleteAccount', 'summary', 'coach', 'coachChat', 'history', 'social', 'post', 'friend', 'friends', 'leaderboard']);
 
 // Tab bar (MicroInteractions): la pill scivola alla nuova voce (300 ms, molla), la pagina
 // arriva in dissolvenza (150 ms), vibrazione leggera al tocco.
@@ -2924,6 +2931,10 @@ async function loadReferenceForExercise(workout, exercise, curl) {
 }
 
 function renderRoute() {
+  // Chiudono i canali realtime della chat coach prima di cambiare schermata.
+  coachChatView?.destroy?.();
+  coachChatView = null;
+  coachUI.leave();
   // I pulsanti fissi in basso appartengono alla schermata che li disegna.
   document.querySelector('#dockSlot').replaceChildren();
   const parts = window.location.hash.split('/').filter(Boolean);
@@ -2972,9 +2983,24 @@ function renderRoute() {
     screen = 'account';
     screens.account.hidden = false;
     renderProfileScreen();
+  } else if ((parts[1] === 'coaching' || parts[1] === 'coach') && parts[2] === 'chat' && parts[3] && !demoPreview) {
+    if (cloudUser) {
+      screen = 'coachChat';
+      coachChatView = renderCoachChatThread(screens.coachChat, document.querySelector('#dockSlot'), {
+        client: cloudClient,
+        me: cloudUser.id,
+        linkId: decodeURIComponent(parts[3]),
+        onBack: () => { coachUI.showChat(); openRoute('#/coaching'); },
+      });
+    } else {
+      screen = 'coachingLocked';
+      renderCoachingLocked();
+    }
   } else if ((parts[1] === 'coaching' || parts[1] === 'coach') && !demoPreview) {
     if (cloudUser) {
       screen = 'coach';
+      // #/coaching/chat (notifica di una richiesta): si apre la scheda Chat.
+      if (parts[2] === 'chat') coachUI.showChat();
       void coachUI.enter(cloudClient, cloudUser);
     } else {
       screen = 'coachingLocked';
@@ -3040,7 +3066,7 @@ function renderRoute() {
     renderHome();
   }
   for (const [name, element] of Object.entries(screens)) element.hidden = name !== screen;
-  accessMode = cloudUser ? (screen === 'coach' ? 'coach' : 'client') : null;
+  accessMode = cloudUser ? (screen === 'coach' || screen === 'coachChat' ? 'coach' : 'client') : null;
   renderChrome(screen);
   updateWorkoutTimer();
   if (screen !== 'exercise') { document.querySelector('#exerciseNav').hidden = true; hideRestPanel(); } else { showRestIfHere(); drawPilates(); }
