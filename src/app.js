@@ -1,4 +1,4 @@
-import { analyzeCurlVideo, compareCurlVideos } from './curl-analysis.js';
+import { analyzeCurlVideo } from './curl-analysis.js';
 import { CURL_EXERCISE, curlVariant } from './exercise-catalog.js';
 import { analysisGrid, SAMPLE_FPS, stabilizePoseFrames } from './pose-stabilization.js';
 import { canDecodeSequentially, decodeFrames } from './video-decoder.js';
@@ -7,7 +7,7 @@ import { exerciseRule } from './pose-rules.js';
 import { packFrames, unpackFrames } from './pose-frames.js';
 import { exerciseSummary, loadWorkouts, makeId, migrateLegacyCurlLogs, saveWorkouts, WORKOUT_STORAGE_KEY } from './workouts.js';
 import { ACTIVE_WORKOUT_KEY, formatElapsed, loadActiveWorkout } from './workout-session.js';
-import { compareMovement, profileMovement } from './generic-pose.js';
+import { profileMovement } from './generic-pose.js';
 import { deleteCachedPosesWithPrefix, deletePersonalReference, deletePersonalReferencesWithPrefix, getCachedPose, getPersonalReference, saveCachedPose, savePersonalReference } from './reference-store.js';
 import { exerciseHistoryKey, exerciseLogKey, finishWorkoutSession, migratePreviousLog, readExerciseHistory, readSetLog, sessionMetric } from './workout-history.js';
 import { averageMinutes, endWorkoutCheck, plannedSets, restSecondsOf, rowDone, shortDate, workoutSessions } from './workout-insights.js';
@@ -64,17 +64,8 @@ const MEDIAPIPE_URL = new URL('../vendor/mediapipe/', import.meta.url).href;
 const MODEL_URL = `${MEDIAPIPE_URL}pose_landmarker_heavy.task`;
 const UNREADABLE_VIDEO = 'Impossibile leggere il video. I filmati HEVC dell’iPhone non si aprono su tutti i telefoni Android: registra in H.264 (iPhone: Impostazioni › Fotocamera › Formati › Più compatibile) e riprova.';
 
-const videoInput = document.querySelector('#videoInput');
 const referenceVideo = document.querySelector('#referenceVideo');
-const video = document.querySelector('#video');
-const videoName = document.querySelector('#videoName');
-const canvas = document.querySelector('#overlay');
-const attemptOverlay = createPoseOverlay(video, canvas);
 const referenceOverlay = createPoseOverlay(referenceVideo, document.querySelector('#referenceOverlay'));
-const emptyStage = document.querySelector('#emptyStage');
-const analyzeButton = document.querySelector('#analyzeButton');
-const status = document.querySelector('#status');
-const feedback = document.querySelector('#feedback');
 const appScroll = document.querySelector('#appScroll');
 // Card a fuoco durante lo scroll (ScrollFocusList) su Schede, Sequenze e Storico.
 const refreshFocusList = attachFocusList(appScroll);
@@ -207,11 +198,7 @@ function syncModeWithProfile(profile) {
   chooseMode(mode);
   return true;
 }
-let activeExerciseKey;
 let currentExercise;
-let currentReference;
-// 'builtin' (curl incluso), 'personal' (video dell'atleta) o 'coach'.
-let currentReferenceSource = null;
 let referenceUrl;
 // Percorso «Analisi video»: vive finché si resta nella rotta #/analisi/…
 let analysisFlow = null;
@@ -292,7 +279,6 @@ async function showDemoClient(customer, plans) {
   storage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(plans));
   workouts = plans;
   activeWorkout = loadActiveWorkout(storage, workouts);
-  activeExerciseKey = undefined;
   document.querySelector('#demoPreviewLabel').textContent = `Prova cliente · ${customer.name}. I dati inseriti sono di test.`;
   document.querySelector('#demoPreviewBar').hidden = false;
   document.querySelector('#accountButton').hidden = true;
@@ -305,7 +291,6 @@ function exitDemoClient() {
   storage = cloudUser ? accountStorage(deviceStorage, cloudUser.id, scheduleCloudSync) : deviceStorage;
   workouts = loadWorkouts(storage);
   activeWorkout = loadActiveWorkout(storage, workouts);
-  activeExerciseKey = undefined;
   document.querySelector('#demoPreviewBar').hidden = true;
   document.querySelector('#accountButton').hidden = false;
   openRoute('#/coaching'); updateWorkoutTimer();
@@ -642,7 +627,6 @@ async function handleAuthSession(session) {
     void acceptPendingInvite();
     void enablePush(cloudClient, { onOpen: (route) => openRoute(route), onReceive: () => { socialState.loaded = false; void refreshNotifications(); } });
   }
-  activeExerciseKey = undefined;
   if (!user) {
     storage = deviceStorage;
     workouts = loadWorkouts(storage);
@@ -1051,14 +1035,8 @@ async function importBackup(file) {
 }
 
 let poseLandmarker;
-let attemptUrl;
-// Il file dell'esecuzione, solo in memoria, per decodificarlo in sequenza durante l'analisi.
-let attemptFile = null;
-let attemptValid = false;
-let working = false;
 
 keepFrameFitted(referenceVideo);
-keepFrameFitted(video);
 referenceVideo.src = CURL_EXERCISE.referenceVideo;
 
 // TimerBar in alto su ogni schermata finché l'allenamento è in corso.
@@ -2722,26 +2700,6 @@ function renderSetRows(workout, exercise) {
       : 'Avvia la scheda per registrare una nuova seduta nello storico.';
 }
 
-// Il video dell'esecuzione esiste solo in memoria mentre l'esercizio è aperto:
-// non viene salvato sul dispositivo né inviato al server.
-function releaseAttempt() {
-  if (working) return;
-  video.pause();
-  if (attemptUrl) URL.revokeObjectURL(attemptUrl);
-  attemptUrl = undefined;
-  attemptFile = null;
-  attemptValid = false;
-  videoInput.value = '';
-  video.removeAttribute('src');
-  video.load();
-  video.hidden = true;
-  emptyStage.hidden = false;
-  videoName.textContent = 'Nessun video selezionato';
-  clearResults();
-  setStatus('Carica il tuo video per iniziare.');
-  refreshButton();
-}
-
 // Frecce per passare all'esercizio precedente o successivo della stessa scheda.
 // Frecce negli angoli in basso: precedente e successivo; sull'ultimo esercizio «Fine».
 function renderExerciseNav(workout, exercise) {
@@ -2763,8 +2721,7 @@ function renderExerciseNav(workout, exercise) {
   nav.hidden = false;
 }
 
-// «Carica e analizza il tuo video» apre il percorso a quattro schermate. Il vecchio
-// riquadro in linea resta nel DOM (nascosto) perché condivide le funzioni del riferimento.
+// «Carica e analizza il tuo video» apre il percorso a quattro schermate.
 document.querySelector('#openAnalysisButton').addEventListener('click', () => {
   const parts = window.location.hash.split('/');
   const workout = workouts.find((item) => item.id === parts[2] && !item.deleted);
@@ -2785,13 +2742,7 @@ function renderExercise(workout, exercise) {
   document.querySelector('#coachInstructionList').replaceChildren(...(exercise.instructions ?? '').split('\n').filter((line) => line.trim()).map((line) => {
     const item = document.createElement('li'); item.textContent = line; return item;
   }));
-  const exerciseKey = `${workout.id}:${exercise.id}`;
-  if (activeExerciseKey !== exerciseKey) {
-    releaseAttempt();
-    activeExerciseKey = exerciseKey;
-  }
   currentExercise = exercise;
-  currentReference = null;
   const variant = curlVariant(exercise);
   const curl = variant === 'standing';
   const timed = exercise.mode === 'time';
@@ -2808,10 +2759,6 @@ function renderExercise(workout, exercise) {
   document.querySelector('#targetUnit').textContent = timed ? 'minuti' : 'ripetizioni';
   document.querySelector('#referenceSection').hidden = true;
   document.querySelector('#curlInstructions').hidden = !curl || (assigned && !!exercise.instructions);
-  // Il risultato dell'analisi vive nella rotta #/analisi/…: in linea resta nascosto.
-  document.querySelector('#analysisPanel').hidden = true;
-  document.querySelector('#analysisSection').hidden = true;
-  document.querySelector('#resultSection').hidden = true;
   document.querySelector('#genericVideoNote').hidden = true;
   document.querySelector('#logHeading').textContent = timed ? 'Il tuo tempo' : 'Le tue serie';
   renderExerciseNav(workout, exercise);
@@ -2838,8 +2785,6 @@ function renderExercise(workout, exercise) {
 
 const BUILTIN_POSE_URL = './reference/curl-corretto.pose.json';
 let referencePoseJob = 0;
-// Pose del riferimento già levigate: servono alla sagoma e alla ricerca della posa.
-let referencePoseFrames = [];
 const uploadingReferences = new Set();
 
 function poseKey(reference) {
@@ -2874,7 +2819,7 @@ async function computePose(blob) {
     });
     return packFrames(await withLandmarker(async () => {
       await ensureModel(setReferencePoseStatus);
-      return collectFrames(media, 'Preparo le linee del riferimento', { showVideo: false, report: setReferencePoseStatus, file: blob });
+      return collectFrames(media, 'Preparo le linee del riferimento', { report: setReferencePoseStatus, file: blob });
     }));
   } finally {
     media.pause();
@@ -2890,7 +2835,6 @@ async function computePose(blob) {
 async function showReferencePose({ key, packedUrl, loadVideo, profile, route }) {
   const job = ++referencePoseJob;
   referenceOverlay.set([]);
-  referencePoseFrames = [];
   setReferencePoseStatus('');
   let packed = null;
   try {
@@ -2916,14 +2860,12 @@ async function showReferencePose({ key, packedUrl, loadVideo, profile, route }) 
       exerciseTitle: currentExercise?.title,
     };
     referenceOverlay.set(frames, { rule: exerciseRule(ruleProfile, kind), hud: 'none', trail: false });
-    referencePoseFrames = referenceOverlay.frames();
   }
 }
 
 function stopReferencePose() {
   referencePoseJob += 1;
   referenceOverlay.set([]);
-  referencePoseFrames = [];
   setReferencePoseStatus('');
 }
 
@@ -2985,7 +2927,6 @@ async function loadReferenceForExercise(workout, exercise, curl) {
   const route = `#/esercizio/${workout.id}/${exercise.id}`;
   const userId = cloudUser?.id;
   stopReferencePose();
-  currentReferenceSource = null;
   if (workout.source === 'coach') {
     const reference = exercise.coachReference;
     if (referenceUrl) { URL.revokeObjectURL(referenceUrl); referenceUrl = null; }
@@ -2993,20 +2934,14 @@ async function loadReferenceForExercise(workout, exercise, curl) {
       try {
         const url = await coachVideoUrl(cloudClient, reference);
         if (window.location.hash !== route || cloudUser?.id !== userId) return;
-        currentReference = reference.profile ? reference : null;
-        currentReferenceSource = 'coach';
         referenceVideo.src = url;
         document.querySelector('#referenceLabel').textContent = 'Esecuzione del coach';
         document.querySelector('#referenceBadge').textContent = 'riferimento';
-        document.querySelector('#resultBadge').textContent = 'Confronto';
         referenceVideo.setAttribute('aria-label', 'Video di riferimento del coach');
         document.querySelector('#referenceCaption').textContent = 'Segui il video e le indicazioni del tuo coach.';
         document.querySelector('#referenceSection').hidden = false;
-        for (const id of ['analysisSection', 'resultSection']) document.getElementById(id).hidden = true;
         document.querySelector('#genericVideoNote').textContent = 'Il video del coach è disponibile. Il confronto automatico non è stato attivato per questo esercizio.';
         document.querySelector('#genericVideoNote').hidden = !!reference.profile;
-        document.querySelector('#analysisDescription').textContent = 'Carica la tua esecuzione, con la stessa inquadratura del riferimento.';
-        document.querySelector('#analysisLimits').textContent = 'Confronto sperimentale con il movimento del coach. Il tuo video viene elaborato sul dispositivo e non è condiviso con il coach.';
         void showReferencePose({ key: `path:${reference.path}`, loadVideo: () => downloadReferenceVideo(cloudClient, reference.path), profile: reference.profile, route });
         return;
       } catch {
@@ -3044,39 +2979,25 @@ async function loadReferenceForExercise(workout, exercise, curl) {
     if (reference && !reference.path && canEditWorkout(workout)) void finishReference(workout.id, exercise.id, reference);
   }
   if (window.location.hash !== route || cloudUser?.id !== userId) return;
-  currentReference = reference ?? null;
   if (referenceUrl) { URL.revokeObjectURL(referenceUrl); referenceUrl = null; }
   if (reference) {
-    currentReferenceSource = 'personal';
     referenceUrl = URL.createObjectURL(reference.video);
     referenceVideo.src = referenceUrl;
     document.querySelector('#referenceLabel').textContent = 'Tuo video di riferimento';
     document.querySelector('#referenceBadge').textContent = 'personale';
     referenceVideo.setAttribute('aria-label', 'Video di riferimento personale');
-    document.querySelector('#resultBadge').textContent = 'Confronto';
     document.querySelector('#referenceCaption').textContent = 'Questo video è il tuo riferimento personale. Il confronto non certifica che la tecnica mostrata sia corretta.';
-    document.querySelector('#analysisDescription').textContent = 'Carica una ripresa con la stessa inquadratura per confrontarla con il tuo riferimento.';
-    document.querySelector('#analysisLimits').textContent = reference.kind === 'curl'
-      ? 'Confrontiamo il curl con il tuo video personale. Il sistema non ha verificato che il riferimento sia tecnicamente corretto.'
-      : 'Confrontiamo l’ampiezza delle articolazioni più mobili con il tuo riferimento. Non misuriamo la durata dell’allenamento e non giudichiamo la correttezza tecnica.';
     const blob = reference.video;
     void showReferencePose({ key: poseKey(reference), loadVideo: async () => blob, profile: reference.profile, route });
   } else if (curl) {
-    currentReferenceSource = 'builtin';
     referenceVideo.src = CURL_EXERCISE.referenceVideo;
     document.querySelector('#referenceLabel').textContent = 'Esecuzione corretta';
     document.querySelector('#referenceBadge').textContent = 'video fisso';
     referenceVideo.setAttribute('aria-label', 'Video del curl corretto');
-    document.querySelector('#resultBadge').textContent = 'Tecnica';
     document.querySelector('#referenceCaption').textContent = 'Guarda il movimento indicato nella scheda prima di iniziare.';
-    document.querySelector('#analysisDescription').textContent = 'Registra il tuo curl di lato, in verticale o in orizzontale, poi carica il video per ricevere un riscontro.';
-    document.querySelector('#analysisLimits').textContent = 'Controlliamo ampiezza del curl, gomito e busto. Questo giudizio è sperimentale e non certifica la correttezza dell’esecuzione.';
     void showReferencePose({ packedUrl: BUILTIN_POSE_URL, profile: CURL_EXERCISE.referenceProfile, route });
   }
   document.querySelector('#referenceSection').hidden = !reference && !curl;
-  // Il vecchio risultato in linea non si mostra più: il video dell'utente usa il nuovo flusso.
-  document.querySelector('#analysisSection').hidden = true;
-  document.querySelector('#resultSection').hidden = true;
   document.querySelector('#genericVideoNote').hidden = !!reference || curl;
   if (workout.source !== 'coach') document.querySelector('#genericVideoNote').textContent = 'Per confrontare questo esercizio con le tue esecuzioni, aggiungi un video personale da “Modifica esercizio”. Il confronto misura la somiglianza, non la correttezza tecnica.';
 }
@@ -3242,7 +3163,6 @@ function renderRoute() {
   if (screen !== 'exercise') {
     referenceVideo.pause();
     stopReferencePose();
-    if (activeExerciseKey && !working) { releaseAttempt(); activeExerciseKey = undefined; }
   }
   // Uscendo dalla rotta di analisi si fermano i video e si liberano gli objectURL.
   if (screen !== 'videoAnalysis') closeAnalysisFlow();
@@ -3376,7 +3296,6 @@ async function storeExercise({ exercise, editing, inDraft, workoutId, referenceF
     if (newReference && (oldReference || savedReference)) forgetReference({ reference: savedReference }, oldReference);
     workouts = next;
     if (newReference && !newReference.path) void finishReference(workoutId, id, newReference);
-    activeExerciseKey = undefined;
     openRoute(`#/scheda/${workoutId}`);
   } catch (error) {
     console.error('BUDDYGYM reference failed', error);
@@ -3390,8 +3309,6 @@ async function storeExercise({ exercise, editing, inDraft, workoutId, referenceF
 
 // Oltre questa soglia il video personale viene ridotto prima di salvarlo sul dispositivo.
 const PERSONAL_REFERENCE_MAX_BYTES = 20 * 1024 * 1024;
-
-function setStatus(message) { status.textContent = message; }
 
 function checkFormat(media) {
   // Qualsiasi formato va bene, verticale o orizzontale: gli angoli sono misurati
@@ -3437,7 +3354,7 @@ async function analyzePersonalReferenceNow(file, exercise, reportOverride = null
     if (!analyze) return null;
     const allFrames = await withLandmarker(async () => {
       await ensureModel(report);
-      return collectFrames(media, 'Analizzo il riferimento', { showVideo: false, report, file });
+      return collectFrames(media, 'Analizzo il riferimento', { report, file });
     });
     const frames = stabilizePoseFrames(analysisGrid(allFrames));
     const curl = curlVariant(exercise) !== null;
@@ -3455,13 +3372,6 @@ async function analyzePersonalReferenceNow(file, exercise, reportOverride = null
     media.remove();
     URL.revokeObjectURL(url);
   }
-}
-
-function refreshButton() { analyzeButton.disabled = working || !attemptValid; }
-
-function showVideo() {
-  emptyStage.hidden = true;
-  video.hidden = false;
 }
 
 // MediaPipe in modalità video segue un solo filmato alla volta: riferimento ed
@@ -3513,7 +3423,7 @@ async function createLandmarker(delegate) {
   return landmarker;
 }
 
-async function ensureModel(report = setStatus) {
+async function ensureModel(report = () => {}) {
   if (poseLandmarker) return;
   report('Carico il modello di rilevamento del corpo…');
   const { FilesetResolver } = await import(`${MEDIAPIPE_URL}vision_bundle.js`);
@@ -3567,8 +3477,6 @@ function seekTo(media, time) {
     media.currentTime = time;
   });
 }
-
-function seekToStart(media) { return seekTo(media, 0); }
 
 // I video si analizzano a SAMPLE_FPS fotogrammi al secondo. Le linee usano tutti i
 // fotogrammi; il confronto uno ogni 0,1 s (analysisGrid), come i profili salvati.
@@ -3645,10 +3553,9 @@ async function framesBySeeking(media, aspect, description, report, onProgress) {
 }
 
 async function collectFrames(media, description, options = {}) {
-  if (options.showVideo !== false) showVideo();
   media.controls = false;
   media.pause();
-  const report = options.report ?? setStatus;
+  const report = options.report ?? (() => {});
   const aspect = media.videoWidth / media.videoHeight;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -3669,149 +3576,7 @@ async function collectFrames(media, description, options = {}) {
   throw new Error('Analisi non riuscita.');
 }
 
-function renderChecks(comparison) {
-  feedback.replaceChildren();
-  feedback.hidden = false;
-  if (!comparison.ready) {
-    const note = document.createElement('p');
-    note.className = 'result-message';
-    note.textContent = comparison.message;
-    feedback.append(note);
-    return;
-  }
-  for (const check of comparison.checks) {
-    const card = document.createElement('div');
-    card.className = `check-card ${check.state}`;
-    const label = document.createElement('strong');
-    label.textContent = check.name;
-    const paragraph = document.createElement('p');
-    paragraph.textContent = check.message;
-    card.append(label, paragraph);
-    if (check.at !== null) {
-      const jump = document.createElement('button');
-      jump.textContent = `Guarda il momento · ${check.at.toFixed(1)} s`;
-      jump.addEventListener('click', () => {
-        video.pause();
-        video.currentTime = check.at;
-      });
-      card.append(jump);
-    }
-    feedback.append(card);
-  }
-}
-
-function clearResults() {
-  feedback.hidden = true;
-  feedback.replaceChildren();
-  attemptOverlay.set([]);
-}
-
-function assignFile() {
-  const file = videoInput.files?.[0];
-  if (!file || working) return;
-  attemptFile = file;
-  if (attemptUrl) URL.revokeObjectURL(attemptUrl);
-  const url = URL.createObjectURL(file);
-  attemptUrl = url;
-  attemptValid = false;
-  video.src = url;
-  videoName.textContent = file.name;
-  clearResults();
-  showVideo();
-  video.load();
-  setStatus(`Controllo il formato di ${file.name}…`);
-  refreshButton();
-}
-
-videoInput.addEventListener('change', assignFile);
-video.addEventListener('loadedmetadata', () => {
-  const issue = checkFormat(video);
-  attemptValid = !issue;
-  if (issue) setStatus(`Video da valutare: ${issue}`);
-  else setStatus('Video pronto. Puoi avviare l’analisi.');
-  refreshButton();
-});
-referenceVideo.addEventListener('error', () => { setStatus('Il video dimostrativo non è disponibile. L’analisi resta possibile con il profilo salvato.'); });
-video.addEventListener('error', () => { attemptValid = false; setStatus(UNREADABLE_VIDEO); refreshButton(); });
-
-analyzeButton.addEventListener('click', () => {
-  if (!attemptValid || working) return;
-  // Analisi della tua esecuzione: schermo acceso finché non ha finito.
-  void withScreenOn(analyzeAttempt);
-});
-
-const POSE_LEGEND_KEY = 'buddygym:pose-legend-seen';
-function poseLegendSeen() {
-  try { return deviceStorage?.getItem(POSE_LEGEND_KEY) === '1'; } catch { return false; }
-}
-function markPoseLegendSeen() {
-  try { deviceStorage?.setItem(POSE_LEGEND_KEY, '1'); } catch { /* Resta solo in memoria. */ }
-}
-
-async function analyzeAttempt() {
-  working = true;
-  refreshButton();
-  videoInput.disabled = true;
-  referenceVideo.pause();
-  clearResults();
-  try {
-    const allFrames = await withLandmarker(async () => {
-      await ensureModel();
-      return collectFrames(video, 'Analizzo il movimento', { file: attemptFile });
-    });
-    const attemptFrames = stabilizePoseFrames(analysisGrid(allFrames));
-    const isGeneric = currentReference?.kind === 'generic';
-    const referenceProfile = currentReference?.profile ?? CURL_EXERCISE.referenceProfile;
-    // I riferimenti salvati prima della correzione delle proporzioni restano confrontabili.
-    const attempt = isGeneric ? null : analyzeCurlVideo(attemptFrames, { geometry: referenceProfile.geometry ?? 1 });
-    const comparison = isGeneric
-      ? compareMovement(referenceProfile, attemptFrames)
-      : compareCurlVideos(referenceProfile, attempt);
-    renderChecks(comparison);
-    showVideo();
-    await seekToStart(video);
-    video.controls = true;
-    // Regola di lettura del gesto: articolazioni, zona e verso della concentrica.
-    const ruleProfile = {
-      ...(isGeneric ? referenceProfile : { ...referenceProfile, side: attempt?.side ?? referenceProfile.side }),
-      exerciseId: currentExercise?.id,
-      exerciseTitle: currentExercise?.title,
-    };
-    const rule = exerciseRule(ruleProfile, isGeneric ? 'generic' : 'curl');
-    const firstPoseLegend = !poseLegendSeen();
-    attemptOverlay.set(allFrames, {
-      rule,
-      referenceFrames: referencePoseFrames,
-      targetReps: currentExercise?.reps ?? null,
-      hud: firstPoseLegend ? 'legend' : 'training',
-    });
-    if (firstPoseLegend) markPoseLegendSeen();
-    if (isGeneric) {
-      setStatus(comparison.ready
-        ? currentReferenceSource === 'coach'
-          ? 'Confronto completato. Le differenze riguardano il movimento rispetto al video del coach; il giudizio resta sperimentale.'
-          : 'Confronto completato. Le differenze segnalate riguardano il movimento rispetto al tuo video personale, non la correttezza della tecnica.'
-        : 'Non si vedono abbastanza articolazioni per confrontare questo video con il riferimento.');
-    } else if (comparison.ready) {
-      const range = attempt.activeRange;
-      setStatus(range
-        ? `Analisi completata. Ho valutato il movimento tra ${range.start.toFixed(1)} e ${range.end.toFixed(1)} s; i gesti fuori da questo intervallo non incidono sul giudizio.${attempt.ignoredBoundary ? ' Un gesto al margine del video è stato escluso perché diverso dagli altri: controlla che non fosse un curl intenzionale.' : ''} Riproduci il video per vedere leve e zona.${currentReferenceSource === 'coach' ? ' Il confronto usa il video fornito dal coach.' : currentReferenceSource === 'personal' ? ' Il confronto usa il tuo riferimento personale, che non è stato approvato da un coach.' : ''}`
-        : 'Analisi completata. Riproduci il video per vedere leve e zona.');
-    } else {
-      setStatus('Il video non mostra un curl completo abbastanza chiaro per il confronto.');
-    }
-  } catch (error) {
-    console.error('BUDDYGYM analysis failed', error);
-    setStatus('Analisi interrotta. Riprova con un video MP4 breve.');
-    showVideo();
-  } finally {
-    working = false;
-    video.pause();
-    video.controls = true;
-    videoInput.disabled = false;
-    refreshButton();
-  }
-}
+referenceVideo.addEventListener('error', () => { setReferencePoseStatus('Il video dimostrativo non è disponibile. L’analisi resta possibile con il profilo salvato.'); });
 
 // ── Analisi video: flusso a quattro schermate ─────────────────────────────────
 // Il video dell'utente vive solo in questa rotta; alla fine si salva il risultato,
@@ -4072,7 +3837,6 @@ async function runAnalysisFlow(flow) {
       await ensureModel();
       return collectFrames(flow.video, 'Analizzo il movimento', {
         file: flow.file,
-        showVideo: false,
         onProgress: (fraction) => {
           if (current()) setAnalysisProgress({ progress: Math.max(0, Math.min(1, fraction)) * 0.85 });
         },

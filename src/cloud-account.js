@@ -1,6 +1,7 @@
-import { loadSessions, saveSessions } from './sessions.js';
+import { loadSessions, saveSessions, SESSIONS_KEY } from './sessions.js';
 import { exampleWorkouts, loadWorkouts, WORKOUT_STORAGE_KEY } from './workouts.js';
 import { exerciseHistoryKey, readExerciseHistory } from './workout-history.js';
+import { fingerprint } from './sync-queue.js';
 import { COACH_BUCKET } from './coach-data.js';
 import { authRedirectUrl, isNativeApp, nativePlugin, NATIVE_AUTH_REDIRECT } from './native-app.js';
 
@@ -131,30 +132,77 @@ export async function downloadAccount(client, userId, storage) {
   return { workouts, hasRemoteWorkouts: remoteWorkouts.length > 0 };
 }
 
-export async function uploadAccount(client, userId, storage, removedIds = [], removedExercises = []) {
+function copyPrints(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const prints = {};
+  for (const [id, print] of Object.entries(value)) prints[id] = print;
+  return prints;
+}
+
+function withSessionPrints(ids, prints) {
+  // Proprietà non enumerabile: l'array resta identico per i chiamanti e per i test esistenti.
+  Object.defineProperty(ids, 'sessionPrints', {
+    value: prints, enumerable: false, configurable: true, writable: true,
+  });
+  return ids;
+}
+
+export async function uploadAccount(client, userId, storage, removedIds = [], removedExercises = [], options = {}) {
   const workouts = loadWorkouts(storage);
-  const rows = workouts.map((workout) => ({
-    user_id: userId, id: workout.id, title: workout.title, source: workout.source,
-    mode: workout.mode === 'pilates' ? 'pilates' : 'gym', exercises: workout.exercises,
-    archived: !!workout.archived, deleted: !!workout.deleted, updated_at: new Date().toISOString(),
-  }));
-  await upsertBatches(client, 'buddy_workouts', rows, 'user_id,id');
-  const historyRows = workouts.flatMap((workout) => workout.exercises.flatMap((exercise) =>
+  // Senza coda (o con all) si comporta esattamente come il vecchio upload completo.
+  const dirty = options && typeof options === 'object' ? options.dirty : null;
+  const incremental = dirty && dirty.all === false;
+  const dirtyKeys = incremental ? new Set(Array.isArray(dirty.keys) ? dirty.keys : []) : null;
+
+  if (!incremental || dirtyKeys.has(WORKOUT_STORAGE_KEY)) {
+    const rows = workouts.map((workout) => ({
+      user_id: userId, id: workout.id, title: workout.title, source: workout.source,
+      mode: workout.mode === 'pilates' ? 'pilates' : 'gym', exercises: workout.exercises,
+      archived: !!workout.archived, deleted: !!workout.deleted, updated_at: new Date().toISOString(),
+    }));
+    await upsertBatches(client, 'buddy_workouts', rows, 'user_id,id');
+  }
+
+  // Nella coda incrementale carichiamo solo le coppie scheda/esercizio toccate.
+  const pairs = [];
+  for (const workout of workouts) for (const exercise of workout.exercises) {
+    if (!incremental || dirtyKeys.has(exerciseHistoryKey(workout.id, exercise.id))) pairs.push({ workout, exercise });
+  }
+  const historyRows = pairs.flatMap(({ workout, exercise }) =>
     readExerciseHistory(storage, workout.id, exercise.id).map((entry) => ({
       user_id: userId, workout_id: workout.id, exercise_id: exercise.id,
       session_id: entry.sessionId, started_at: entry.startedAt ?? null,
       ended_at: entry.endedAt ?? null, set_rows: entry.rows,
-    }))));
+    })));
   await upsertBatches(client, 'buddy_exercise_history', historyRows, 'user_id,workout_id,exercise_id,session_id');
-  const sessionRows = loadSessions(storage).map((session) => ({
-    user_id: userId, id: session.id, workout_id: session.workoutId, workout_title: session.title,
-    started_at: session.startedAt, ended_at: session.endedAt, summary: session.summary ?? {},
-    effort: session.effort ?? null, mode: session.mode === 'pilates' ? 'pilates' : 'gym', updated_at: new Date().toISOString(),
-  }));
-  await upsertBatches(client, 'buddy_sessions', sessionRows, 'user_id,id');
+
+  let sessionPrints;
+  if (!incremental || dirtyKeys.has(SESSIONS_KEY)) {
+    const sessions = loadSessions(storage);
+    const previous = copyPrints(options && options.sessionPrints);
+    const current = {};
+    const sessionRows = [];
+    for (const session of sessions) {
+      const print = fingerprint(session);
+      current[session.id] = print;
+      if (!incremental || previous[session.id] !== print) {
+        sessionRows.push({
+          user_id: userId, id: session.id, workout_id: session.workoutId, workout_title: session.title,
+          started_at: session.startedAt, ended_at: session.endedAt, summary: session.summary ?? {},
+          effort: session.effort ?? null, mode: session.mode === 'pilates' ? 'pilates' : 'gym', updated_at: new Date().toISOString(),
+        });
+      }
+    }
+    await upsertBatches(client, 'buddy_sessions', sessionRows, 'user_id,id');
+    // Le sedute locali sono allineate; conserviamo anche eventuali impronte precedenti.
+    sessionPrints = incremental ? { ...previous, ...current } : current;
+  } else {
+    sessionPrints = copyPrints(options && options.sessionPrints);
+  }
+
   for (const { workoutId, exerciseId } of removedExercises) {
     assertOk(await client.from('buddy_exercise_history').delete().eq('user_id', userId).eq('workout_id', workoutId).eq('exercise_id', exerciseId));
   }
   for (const id of removedIds) assertOk(await client.from('buddy_workouts').delete().eq('user_id', userId).eq('id', id));
-  return workouts.map((workout) => workout.id);
+  return withSessionPrints(workouts.map((workout) => workout.id), sessionPrints);
 }

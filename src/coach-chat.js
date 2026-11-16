@@ -54,6 +54,17 @@ export function messageGroups(messages, now = new Date()) {
   return groups;
 }
 
+// Unisce una pagina più vecchia a quella già mostrata: niente duplicati e ordine di data.
+// A parità di id vince il messaggio già mostrato (read_at più aggiornato).
+export function mergeMessages(older, current) {
+  const byId = new Map();
+  for (const message of [...(current ?? []), ...(older ?? [])]) {
+    if (message?.id == null || byId.has(message.id)) continue;
+    byId.set(message.id, message);
+  }
+  return [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+}
+
 // Testo del messaggio: obbligatorio, al massimo 2000 caratteri (come nel database).
 export function messageProblem(body) {
   const text = String(body ?? '').trim();
@@ -69,41 +80,26 @@ export function clockTime(iso) {
 
 // ── Dati ───────────────────────────────────────────────────────────────
 
-// Tutti i miei legami con l'alias dell'altra persona, il mio ruolo e i non letti.
+// Le mie chat con anteprima e non letti già calcolati dal database (RPC).
+// Restituisce la stessa forma di sempre: la usano area coach, app e lista chat.
 export async function loadCoachLinks(client, me) {
-  const links = ok(await client.from('buddy_coach_links')
-    .select('id,coach,client,status,created_at,accepted_at')
-    .order('created_at', { ascending: false }));
-  if (!links.length) return [];
-  const ids = links.map((link) => link.id);
-  const messages = ok(await client.from('buddy_coach_messages')
-    .select('id,link_id,sender,body,created_at,read_at')
-    .in('link_id', ids)
-    .order('created_at', { ascending: true }));
-  const byLink = new Map();
-  for (const message of messages) {
-    const rows = byLink.get(message.link_id) ?? [];
-    rows.push(message);
-    byLink.set(message.link_id, rows);
-  }
-  const otherIds = links.map((link) => (link.coach === me ? link.client : link.coach));
-  const names = await loadNames(client, otherIds);
-  return links.map((link) => {
-    const otherId = link.coach === me ? link.client : link.coach;
-    const rows = byLink.get(link.id) ?? [];
-    const last = rows.at(-1) ?? null;
+  const rows = ok(await client.rpc('buddy_coach_chats'));
+  return (rows ?? []).map((row) => {
+    const role = row.coach === me ? 'coach' : 'client';
     return {
-      id: link.id,
-      coach: link.coach,
-      client: link.client,
-      status: link.status,
-      createdAt: link.created_at,
-      acceptedAt: link.accepted_at,
-      role: link.coach === me ? 'coach' : 'client',
-      otherId,
-      alias: names.get(otherId) ?? 'Utente',
-      unread: unreadCount(rows, me),
-      last: last ? { id: last.id, body: last.body, sender: last.sender, createdAt: last.created_at } : null,
+      id: row.id,
+      coach: row.coach,
+      client: row.client,
+      status: row.status,
+      createdAt: row.created_at,
+      acceptedAt: row.accepted_at,
+      role,
+      otherId: row.other_id ?? (role === 'coach' ? row.client : row.coach),
+      alias: row.alias ?? 'Utente',
+      unread: Number(row.unread) || 0,
+      last: row.last_id
+        ? { id: row.last_id, body: row.last_body ?? '', sender: row.last_sender, createdAt: row.last_at }
+        : null,
     };
   });
 }
@@ -145,11 +141,20 @@ export async function removeLink(client, linkId) {
   ok(await client.from('buddy_coach_links').delete().eq('id', linkId));
 }
 
-export async function loadMessages(client, linkId) {
-  return ok(await client.from('buddy_coach_messages')
+// Ultimi messaggi della chat, in ordine crescente: { messages, hasMore }.
+// Con `before` (created_at del più vecchio mostrato) carica la pagina precedente.
+export async function loadMessages(client, linkId, { before = null, limit = 50 } = {}) {
+  const take = Math.max(1, Math.floor(Number(limit) || 50));
+  let query = client.from('buddy_coach_messages')
     .select('id,link_id,sender,body,created_at,read_at')
-    .eq('link_id', linkId)
-    .order('created_at', { ascending: true }));
+    .eq('link_id', linkId);
+  if (before) query = query.lt('created_at', before);
+  // Dal più recente, un messaggio in più serve solo a sapere se ce ne sono altri.
+  const rows = ok(await query
+    .order('created_at', { ascending: false })
+    .limit(take + 1));
+  const hasMore = rows.length > take;
+  return { messages: rows.slice(0, take).reverse(), hasMore };
 }
 
 export async function sendMessage(client, me, linkId, body) {

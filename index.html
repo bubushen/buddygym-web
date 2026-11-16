@@ -118,6 +118,7 @@
           <p class="bg-note" id="referenceCaption">Guarda il movimento indicato nella scheda prima di iniziare.</p>
         </section>
         <div class="bg-video bg-video--placeholder" role="img" aria-label="Video di riferimento non disponibile"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Video</div>
+        <p class="bg-note bg-analysis__generic" id="genericVideoNote" hidden>Per confrontare questo esercizio con le tue esecuzioni, aggiungi un video personale da “Modifica esercizio”. Il confronto misura la somiglianza, non la correttezza tecnica.</p>
 
         <div id="pilatesBlock" hidden></div>
 
@@ -162,30 +163,6 @@
         </section>
 
         <button type="button" class="bg-analyze" id="openAnalysisButton"><span class="bg-analyze__ic"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg></span><span><b>Carica e analizza il tuo video</b><small>Analisi della tecnica e tracking della posizione</small></span></button>
-        <div class="bg-analysis" id="analysisPanel" hidden>
-          <section class="bg-analysis__block" id="analysisSection" aria-label="Analisi della tua esecuzione">
-            <p class="bg-note" id="analysisDescription">Registra il tuo curl di lato, in verticale o in orizzontale, poi carica il video per ricevere un riscontro.</p>
-            <div class="bg-analysis__upload">
-              <label class="bg-btn bg-btn--outline bg-btn--block" for="videoInput"><svg class="bg-icon bg-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Scegli il video della tua esecuzione</label>
-              <input id="videoInput" type="file" accept="video/*" hidden />
-              <span class="bg-note" id="videoName">Nessun video selezionato</span>
-            </div>
-            <div class="bg-video bg-video--stage" id="videoStage">
-              <div class="bg-video__empty" id="emptyStage"><svg class="bg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><strong>Il tuo video apparirà qui</strong><span>Ripresa laterale · verticale o orizzontale</span></div>
-              <video id="video" playsinline muted preload="metadata" poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" hidden></video>
-              <canvas id="overlay" aria-hidden="true" hidden></canvas>
-            </div>
-            <button id="analyzeButton" class="bg-btn bg-btn--primary bg-btn--block" disabled>Analizza la mia esecuzione</button>
-            <p class="bg-note">L’analisi avviene sul dispositivo. Il video della tua esecuzione non viene salvato né inviato a nessun server: resta solo finché l’esercizio è aperto.</p>
-          </section>
-          <section class="bg-analysis__block bg-result" id="resultSection" aria-live="polite" aria-label="Risultato dell'analisi">
-            <div class="bg-blocktitle bg-blocktitle--inner"><h2>Risultato</h2><span id="resultBadge">Tecnica</span></div>
-            <p id="status" class="bg-result__status">Carica il tuo video per iniziare.</p>
-            <div id="feedback" class="bg-result__list" hidden></div>
-            <p class="bg-note" id="analysisLimits">Controlliamo ampiezza del curl, gomito e busto. Questo giudizio è sperimentale e non certifica la correttezza dell’esecuzione.</p>
-          </section>
-          <p class="bg-note bg-analysis__generic" id="genericVideoNote" hidden>Per confrontare questo esercizio con le tue esecuzioni, aggiungi un video personale da “Modifica esercizio”. Il confronto misura la somiglianza, non la correttezza tecnica.</p>
-        </div>
         <div class="bg-workout-actions"><button type="button" class="bg-link" id="editExerciseButton">Modifica esercizio</button><button type="button" class="bg-link bg-link--danger" id="deleteExerciseButton">Elimina esercizio</button></div>
         <div class="bg-exspacer" aria-hidden="true"></div>
       </section>

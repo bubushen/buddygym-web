@@ -4,7 +4,7 @@ import { button, el, emptyState, textField, topBar } from '../ui/components.js';
 import { icon } from '../ui/icons.js';
 import {
   acceptLink, clockTime, findClient, inviteClient, linkSections, loadCoachLinks, loadLink,
-  loadMessages, markRead, messageGroups, messageProblem, removeLink, sendMessage,
+  loadMessages, markRead, mergeMessages, messageGroups, messageProblem, removeLink, sendMessage,
   subscribeChat, subscribeLinks,
 } from '../coach-chat.js';
 
@@ -182,6 +182,9 @@ export function renderCoachChatThread(root, dock, { client, me, linkId, onBack }
   let send = null;
   let errorNode = null;
   let sending = false;
+  let hasMore = false;
+  let loadingOlder = false;
+  let olderError = '';
 
   function scrollEnd() {
     const scroller = root.closest('.app-scroll');
@@ -206,7 +209,17 @@ export function renderCoachChatThread(root, dock, { client, me, linkId, onBack }
       return;
     }
     const lastMine = [...messages].reverse().find((message) => message.sender === me);
-    messagesHost.replaceChildren(...messageGroups(messages).flatMap((group) => [
+    const nodes = [];
+    if (hasMore) {
+      nodes.push(el('button', {
+        type: 'button',
+        className: 'coach-chat__more',
+        disabled: loadingOlder,
+        onClick: () => { void loadOlder(); },
+      }, loadingOlder ? 'Carico i messaggi…' : 'Carica messaggi precedenti'));
+    }
+    if (olderError) nodes.push(el('p', { className: 'coach-chat__moreerror', role: 'status', text: olderError }));
+    nodes.push(...messageGroups(messages).flatMap((group) => [
       el('div', { className: 'coach-chat__day', text: group.label }),
       ...group.messages.map((message) => {
         const mine = message.sender === me;
@@ -218,6 +231,35 @@ export function renderCoachChatThread(root, dock, { client, me, linkId, onBack }
             mine && message.id === lastMine?.id && message.read_at ? el('span', { text: 'Letto' }) : null));
       }),
     ]));
+    messagesHost.replaceChildren(...nodes);
+  }
+
+  // Pagina precedente: aggiunge in cima senza far saltare la lettura
+  // (si conserva la distanza dal fondo dello scroller).
+  async function loadOlder() {
+    if (loadingOlder || !hasMore || !messages.length) return;
+    const scroller = root.closest('.app-scroll');
+    const fromBottom = scroller ? scroller.scrollHeight - scroller.scrollTop : 0;
+    loadingOlder = true;
+    olderError = '';
+    renderMessages();
+    try {
+      const page = await loadMessages(client, linkId, { before: messages[0].created_at, limit: 50 });
+      if (destroyed) return;
+      messages = mergeMessages(page.messages, messages);
+      hasMore = page.hasMore;
+    } catch {
+      if (destroyed) return;
+      olderError = 'Non riesco a caricare i messaggi precedenti. Riprova.';
+    } finally {
+      if (!destroyed) {
+        loadingOlder = false;
+        renderMessages();
+      }
+    }
+    if (scroller && !destroyed && !olderError) {
+      requestAnimationFrame(() => { if (!destroyed) scroller.scrollTop = scroller.scrollHeight - fromBottom; });
+    }
   }
 
   function resize() {
@@ -321,8 +363,10 @@ export function renderCoachChatThread(root, dock, { client, me, linkId, onBack }
       if (destroyed) return;
       if (!found || found.status !== 'accepted') { unavailable(); return; }
       link = found;
-      messages = await loadMessages(client, linkId);
+      const page = await loadMessages(client, linkId);
       if (destroyed) return;
+      messages = page.messages;
+      hasMore = page.hasMore;
       await markReadQuietly();
       if (destroyed) return;
       draw();
