@@ -11,7 +11,9 @@ import { profileMovement } from './generic-pose.js';
 import { deleteCachedPosesWithPrefix, deletePersonalReference, deletePersonalReferencesWithPrefix, getCachedPose, getPersonalReference, saveCachedPose, savePersonalReference } from './reference-store.js';
 import { exerciseHistoryKey, exerciseLogKey, finishWorkoutSession, migratePreviousLog, readExerciseHistory, readSetLog, sessionMetric } from './workout-history.js';
 import { averageMinutes, endWorkoutCheck, plannedSets, restSecondsOf, rowDone, shortDate, workoutSessions } from './workout-insights.js';
-import { accountStorage, createCloudClient, deleteAccount, downloadAccount, signInWithProvider, uploadAccount } from './cloud-account.js';
+import { accountStorage, createCloudClient, deleteAccount, downloadAccount, signInWithProvider } from './cloud-account.js';
+import { runAccountSync } from './account-sync.js';
+import { fingerprint, hasDirty, markAllDirty, markDirty, saveSessionFingerprints } from './sync-queue.js';
 import { authCallbackParameters, authRedirectUrl, isAuthCallback, isNativeApp, nativePlugin } from './native-app.js';
 import { createLocalBackup, importLocalBackup } from './local-backup.js';
 import { aliasAvailable, loadProfile, saveAlias, saveBirthDate, saveMode as saveProfileMode, savePrivacy, saveProfile } from './profile.js';
@@ -95,6 +97,7 @@ let assignmentSyncAgain = false;
 let assignmentSyncPromise = Promise.resolve();
 const syncMetaKey = (userId) => `buddygym:account-sync-state:${userId}`;
 const dirtyKey = (userId) => `buddygym:account-pending:${userId}`;
+const sessionPrintsKey = (userId) => `buddygym:account-session-prints:${userId}`;
 migrateLegacyCurlLogs(storage);
 let workouts = loadWorkouts(storage);
 let activeWorkout = loadActiveWorkout(storage, workouts);
@@ -555,8 +558,13 @@ async function loadAccountProfile(userId) {
 
 function scheduleCloudSync(key) {
   if (!cloudUser || hydrating || demoPreview) return;
-  if (typeof key === 'string' && key !== WORKOUT_STORAGE_KEY && key !== SESSIONS_KEY && !key.startsWith('buddygym:history:v1:')) return;
-  try { deviceStorage.setItem(dirtyKey(cloudUser.id), '1'); } catch { /* Il salvataggio locale resta la fonte temporanea. */ }
+  const userId = cloudUser.id;
+  if (typeof key === 'string') {
+    if (key !== WORKOUT_STORAGE_KEY && key !== SESSIONS_KEY && !key.startsWith('buddygym:history:v1:')) return;
+    markDirty(deviceStorage, userId, key);
+  } else {
+    markAllDirty(deviceStorage, userId);
+  }
   if (!syncEnabled) return;
   clearTimeout(syncTimer);
   accountMessage('Modifiche salvate sul dispositivo. Sincronizzazione in corso…');
@@ -565,8 +573,14 @@ function scheduleCloudSync(key) {
 
 async function hydrateAccount(userId, userStorage) {
   hydrating = true;
-  try { return await downloadAccount(cloudClient, userId, userStorage); }
-  finally { hydrating = false; }
+  try {
+    const result = await downloadAccount(cloudClient, userId, userStorage);
+    // Le sedute appena scaricate non vanno ricaricate alla prima modifica locale.
+    const prints = {};
+    for (const session of loadSessions(userStorage)) prints[session.id] = fingerprint(session);
+    saveSessionFingerprints(deviceStorage, userId, prints);
+    return result;
+  } finally { hydrating = false; }
 }
 
 function syncCloud() {
@@ -584,10 +598,11 @@ function syncCloud() {
       const removedExercises = uploadedExerciseKeys.filter((key) => !currentExerciseKeys.includes(key))
         .map((key) => { const [workoutId, exerciseId] = key.split('\0'); return { workoutId, exerciseId }; })
         .filter((item) => currentIds.has(item.workoutId));
-      uploadedIds = await uploadAccount(client, userId, userStorage, removed, removedExercises);
+      uploadedIds = await runAccountSync({
+        client, userId, userStorage, deviceStorage, removed, removedExercises,
+      });
       uploadedExerciseKeys = currentExerciseKeys;
       deviceStorage.setItem(syncMetaKey(userId), JSON.stringify({ workoutIds: uploadedIds, exerciseKeys: uploadedExerciseKeys }));
-      deviceStorage.removeItem(dirtyKey(userId));
       if (cloudUser?.id === userId) accountMessage('Schede e storico sincronizzati con il tuo account.');
       return true;
     } catch (error) {
@@ -643,12 +658,14 @@ async function handleAuthSession(session) {
     renderRoute();
     accountMessage('Caricamento delle tue schede…');
     try {
-      if (deviceStorage.getItem(dirtyKey(user.id)) && storage.getItem('buddygym:workouts:v2')) {
+      if (hasDirty(deviceStorage, user.id) && storage.getItem('buddygym:workouts:v2')) {
         let state = {};
         try { state = JSON.parse(deviceStorage.getItem(syncMetaKey(user.id)) || '{}'); } catch { /* Metadati recuperati dai dati locali. */ }
         uploadedIds = Array.isArray(state.workoutIds) ? state.workoutIds : [];
         uploadedExerciseKeys = Array.isArray(state.exerciseKeys) ? state.exerciseKeys : [];
         syncEnabled = true;
+        // Il recupero dopo un'interruzione è sempre completo.
+        markAllDirty(deviceStorage, user.id);
         accountMessage('Recupero le modifiche rimaste su questo dispositivo…');
         if (await syncCloud()) {
           const result = await hydrateAccount(user.id, storage);
@@ -864,7 +881,7 @@ async function signOut() {
 }
 function removeLocalAccountData(userId) {
   const prefix = `buddygym:account:${userId}:`;
-  const exact = [syncMetaKey(userId), dirtyKey(userId)];
+  const exact = [syncMetaKey(userId), dirtyKey(userId), sessionPrintsKey(userId)];
   const keys = [];
   for (let index = 0; index < deviceStorage.length; index += 1) {
     const key = deviceStorage.key(index);
@@ -999,15 +1016,23 @@ async function retrySync() {
   if (!cloudUser) return;
   if (!syncEnabled) {
     const user = cloudUser;
+    markAllDirty(deviceStorage, user.id);
     cloudUser = null;
     await handleAuthSession({ user });
     return;
   }
+  // «Riprova» recupera sempre tutto, non solo la coda incrementale.
+  markAllDirty(deviceStorage, cloudUser.id);
   accountMessage('Sincronizzazione in corso…');
   await syncCloud();
   if (!currentMeasurements) await loadAccountProfile(cloudUser.id);
 }
-window.addEventListener('online', scheduleCloudSync);
+// Rete tornata: riparte solo ciò che era rimasto in coda, non un upload completo.
+window.addEventListener('online', () => {
+  if (!cloudUser || !syncEnabled || hydrating || demoPreview || !hasDirty(deviceStorage, cloudUser.id)) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { void syncCloud(); }, 700);
+});
 
 function exportBackup() {
   try {
@@ -3609,6 +3634,7 @@ function stopAnalysisMedia(flow) {
 
 function closeAnalysisFlow() {
   if (!analysisFlow) return;
+  markPoseLegendSeen(analysisFlow);
   analysisFlow.token += 1;
   stopAnalysisMedia(analysisFlow);
   analysisFlow = null;
@@ -3910,6 +3936,21 @@ function analysisRepWarning(rep) {
   return rep?.issues?.length ? repWarning(rep.issues[0]) : null;
 }
 
+const POSE_LEGEND_KEY = 'buddygym:pose-legend-seen';
+
+function poseLegendFirstTime() {
+  try { return !!deviceStorage && deviceStorage.getItem(POSE_LEGEND_KEY) === null; }
+  catch { return false; }
+}
+
+// La legenda si vede una volta sola: alla prima uscita dal player è già stata mostrata.
+function markPoseLegendSeen(flow) {
+  if (!flow?.player?.legend) return;
+  flow.player.legend = false;
+  try { deviceStorage?.setItem(POSE_LEGEND_KEY, '1'); }
+  catch { /* La legenda non deve bloccare l'analisi. */ }
+}
+
 function createAnalysisPlayer() {
   const flow = analysisFlow;
   if (!flow?.result || !flow.reference) return null;
@@ -3923,13 +3964,14 @@ function createAnalysisPlayer() {
   canvas.hidden = true;
   const overlay = createPoseOverlay(video, canvas);
   const ruleProfile = { ...flow.reference.profile, exerciseId: flow.exerciseId, exerciseTitle: flow.exerciseTitle };
+  const legend = poseLegendFirstTime();
   overlay.set(flow.frames, {
     rule: exerciseRule(ruleProfile, flow.kind),
     referenceFrames: flow.referenceFrames,
     targetReps: flow.targetReps,
-    hud: 'training',
+    hud: legend ? 'legend' : 'training',
   });
-  flow.player = { video, canvas, overlay };
+  flow.player = { video, canvas, overlay, legend };
   return flow.player;
 }
 
@@ -3971,6 +4013,7 @@ function renderAnalysisPlayerStep({ selected = analysisFlow?.selected ?? null, s
 function renderAnalysisResultStep() {
   const flow = analysisFlow;
   if (!flow?.analysis) { renderAnalysisUploadStep(); return; }
+  markPoseLegendSeen(flow);
   flow.step = 'result';
   flow.player?.video.pause();
   const analysis = flow.analysis;

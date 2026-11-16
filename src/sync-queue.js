@@ -80,6 +80,14 @@ export function readDirty(storage, userId) {
   return snapshot;
 }
 
+// Distingue una coda vuota da una chiave mancante o non valida.
+export function hasDirty(storage, userId) {
+  const parsed = readState(storage, userId);
+  if (!parsed.found) return false;
+  if (!parsed.valid) return true;
+  return parsed.state.all || parsed.state.keys.length > 0;
+}
+
 export function markDirty(storage, userId, key) {
   if (typeof key !== 'string' || !key) return false;
   const parsed = readState(storage, userId);
