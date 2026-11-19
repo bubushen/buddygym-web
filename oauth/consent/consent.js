@@ -7,7 +7,7 @@ let client;
 let busy = false;
 
 function show(name) {
-  for (const section of ['loading', 'login', 'decision']) byId(section).hidden = section !== name;
+  for (const section of ['loading', 'login', 'decision', 'error']) byId(section).hidden = section !== name;
 }
 
 function status(message) { byId('status').textContent = message; }
@@ -67,13 +67,14 @@ byId('passwordForm').addEventListener('submit', async (event) => {
 });
 
 if (!authId || !/^[a-zA-Z0-9-]{8,200}$/.test(authId)) {
+  show('error');
   status('Richiesta di autorizzazione mancante o non valida.');
 } else {
   try {
     client = await createCloudClient();
     await loadDecision();
   } catch (error) {
-    show('login');
+    show('error');
     status(error.message || 'Impossibile caricare la richiesta.');
   }
 }
